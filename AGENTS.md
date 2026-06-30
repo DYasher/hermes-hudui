@@ -15,8 +15,8 @@ Hermes HUD Web UI — a browser-based dashboard for monitoring the Hermes AI age
 
 ### Full-Stack Dev
 ```bash
-hermes-hudui --dev          # Terminal 1: backend on :3001 (auto-reload)
-cd frontend && npm run dev  # Terminal 2: frontend on :5173 (proxies /api → :3001)
+hermes-hudui --dev          # Terminal 1: backend on :3002 (auto-reload)
+cd frontend && npm run dev  # Terminal 2: frontend on :5173 (proxies /api → :3002)
 ```
 
 ### Frontend
@@ -30,7 +30,7 @@ npm run preview  # Preview production build
 
 ### Backend CLI
 ```bash
-hermes-hudui                         # Serve on :3001
+hermes-hudui                         # Serve on :3002
 hermes-hudui --port 8080             # Custom port
 hermes-hudui --hermes-dir /path      # Override ~/.hermes/ location
 ```

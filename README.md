@@ -21,7 +21,7 @@ cd hermes-hudui
 hermes-hudui
 ```
 
-Open http://localhost:3001
+Open http://localhost:3002
 
 **Requirements:** Python 3.11+, Node.js 18+, a running Hermes agent with data in `~/.hermes/`
 

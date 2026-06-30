@@ -7,7 +7,7 @@ import sys
 import time
 import urllib.request
 
-BASE = "http://localhost:3001/api/chat"
+BASE = "http://localhost:3002/api/chat"
 PROMPT = "count from 1 to 20, one number per line"
 TRIALS = 5
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     print(f"Prompt: {PROMPT!r}")
 
     cli_results = run("hermes CLI (raw)", bench_cli)
-    hud_results = run("HUD chat (:3001)", bench_hud, sid)
+    hud_results = run("HUD chat (:3002)", bench_hud, sid)
 
     cli_med = median([r["t_first_text"] for r in cli_results])
     hud_med = median([r["t_first_text"] for r in hud_results])

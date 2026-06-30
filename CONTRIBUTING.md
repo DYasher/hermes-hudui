@@ -20,8 +20,8 @@ cd frontend
 npm install
 
 # Run dev servers (two terminals)
-hermes-hudui --dev          # backend on :3001
-cd frontend && npm run dev  # frontend on :5173 (proxies /api to :3001)
+hermes-hudui --dev          # backend on :3002
+cd frontend && npm run dev  # frontend on :5173 (proxies /api to :3002)
 ```
 
 ## Project Structure
