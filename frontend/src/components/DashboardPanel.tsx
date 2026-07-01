@@ -83,7 +83,7 @@ function IdentityBlock({ state, health }: { state: any; health: any }) {
   const days = dr?.[0] ? Math.floor((new Date(dr[1]).getTime() - new Date(dr[0]).getTime()) / 86400000) + 1 : 0
 
   return (
-    <div className="text-[13px] space-y-1 mb-4 p-3" style={{ background: 'var(--hud-bg-panel)', borderLeft: '3px solid var(--hud-primary)' }}>
+    <div className="dashboard-glass-block text-[13px] space-y-1 mb-4 p-3" style={{ borderLeft: '3px solid var(--hud-primary)' }}>
       <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.designation')}</span>  <span className="font-bold gradient-text">HERMES</span></div>
       <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.substrate')}</span>  {config?.provider || '?'}/{config?.model || '?'}</div>
       <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.runtime')}</span>  {config?.backend || '—'}</div>
@@ -182,17 +182,16 @@ function WhatIRemember({ memory, user, corrections, sessions }: { memory: any; u
             [t('dashboard.days'), days.toLocaleString()],
             [t('dashboard.correctedTimes'), totalCorrections.toLocaleString()],
           ].map(([label, value]) => (
-            <div key={String(label)} className="px-2 py-1.5 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+            <div key={String(label)} className="dashboard-glass-chip px-2 py-1.5 border" style={{ borderColor: 'var(--hud-border)' }}>
               <div className="text-[10px] uppercase tracking-widest truncate" style={{ color: 'var(--hud-text-dim)' }}>{label}</div>
               <div className="text-[14px] font-bold" style={{ color: 'var(--hud-primary)' }}>{value}</div>
             </div>
           ))}
         </div>
         <div
-          className="px-3 py-2 text-[13px] space-y-1"
+          className="dashboard-glass-callout px-3 py-2 text-[13px] space-y-1"
           style={{
             borderLeft: '3px solid var(--hud-accent)',
-            background: 'var(--hud-panel-alt, rgba(0,0,0,0.18))',
             color: 'var(--hud-primary)',
           }}
         >

@@ -5,12 +5,13 @@ from __future__ import annotations
 import fcntl
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.cache import clear_cache
@@ -20,7 +21,35 @@ from .serialize import to_dict
 
 router = APIRouter()
 
-PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+PROFILE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+RESERVED_PROFILE_NAMES = {"hermes", "test", "tmp", "root", "sudo"}
+HERMES_SUBCOMMAND_NAMES = {
+    "chat",
+    "model",
+    "gateway",
+    "setup",
+    "whatsapp",
+    "login",
+    "logout",
+    "status",
+    "cron",
+    "doctor",
+    "dump",
+    "config",
+    "pairing",
+    "skills",
+    "tools",
+    "mcp",
+    "sessions",
+    "insights",
+    "version",
+    "update",
+    "uninstall",
+    "profile",
+    "plugins",
+    "honcho",
+    "acp",
+}
 
 PROVIDER_OPTIONS = [
     "openai-codex",
@@ -74,19 +103,91 @@ class ProfileEditBody(BaseModel):
     soul: str = ""
 
 
+class ProfileCreateBody(BaseModel):
+    name: str
+    use_default_template: bool = True
+
+
+class ProfileImportBody(BaseModel):
+    name: str
+    config_yaml: str
+    soul: str = ""
+
+
+class ProfileDeleteBody(BaseModel):
+    confirm_name: str
+
+
+def _normalize_profile_name(profile_name: str) -> str:
+    name = str(profile_name).strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="profile name cannot be empty")
+    return name
+
+
+def _validate_existing_profile_name(profile_name: str) -> str:
+    name = _normalize_profile_name(profile_name)
+    if name == "default":
+        return name
+    if not PROFILE_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="invalid profile name")
+    if name in RESERVED_PROFILE_NAMES or name in HERMES_SUBCOMMAND_NAMES:
+        raise HTTPException(status_code=400, detail="reserved profile name")
+    return name
+
+
 def _profile_dir(profile_name: str) -> Path:
+    profile_name = _validate_existing_profile_name(profile_name)
     hermes_dir = Path(default_hermes_dir())
     if profile_name == "default":
         return hermes_dir
-    if not PROFILE_NAME_RE.match(profile_name) or profile_name in {".", ".."}:
-        raise HTTPException(status_code=400, detail="invalid profile name")
-    path = hermes_dir / "profiles" / profile_name
+    root = hermes_dir / "profiles"
+    path = root / profile_name
     try:
-        path.relative_to(hermes_dir / "profiles")
-    except ValueError:
+        path.relative_to(root)
+        path.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except (OSError, ValueError):
         raise HTTPException(status_code=400, detail="invalid profile name") from None
+    if path.is_symlink():
+        raise HTTPException(status_code=400, detail="profile symlinks are not manageable")
     if not path.is_dir():
         raise HTTPException(status_code=404, detail="profile not found")
+    return path
+
+
+def _hermes_dir() -> Path:
+    return Path(default_hermes_dir())
+
+
+def _profiles_root() -> Path:
+    return _hermes_dir() / "profiles"
+
+
+def _active_profile_path() -> Path:
+    return _hermes_dir() / "active_profile"
+
+
+def _validate_new_profile_name(profile_name: str) -> str:
+    name = _normalize_profile_name(profile_name)
+    if name == "default":
+        raise HTTPException(status_code=409, detail="default profile already exists")
+    if not PROFILE_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="invalid profile name")
+    if name in RESERVED_PROFILE_NAMES or name in HERMES_SUBCOMMAND_NAMES:
+        raise HTTPException(status_code=400, detail="reserved profile name")
+    return name
+
+
+def _new_profile_dir(profile_name: str) -> Path:
+    name = _validate_new_profile_name(profile_name)
+    root = _profiles_root()
+    path = root / name
+    try:
+        path.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid profile name") from None
+    if path.exists():
+        raise HTTPException(status_code=409, detail="profile already exists")
     return path
 
 
@@ -135,6 +236,22 @@ def _with_profile_lock(profile_dir: Path, fn):
     with open(lock_path, "r", encoding="utf-8") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         return fn()
+
+
+def _with_profiles_lock(fn):
+    hermes_dir = _hermes_dir()
+    hermes_dir.mkdir(parents=True, exist_ok=True)
+    return _with_profile_lock(hermes_dir, fn)
+
+
+def _read_active_profile_name() -> str:
+    try:
+        name = _active_profile_path().read_text(encoding="utf-8").strip()
+    except (FileNotFoundError, UnicodeDecodeError, OSError):
+        return "default"
+    if not name:
+        return "default"
+    return name or "default"
 
 
 def _clean_list(values: list[str]) -> list[str]:
@@ -217,6 +334,59 @@ def _profile_edit_payload(profile_name: str, profile_dir: Path) -> dict[str, Any
     }
 
 
+def _fallback_template_config() -> str:
+    return yaml.safe_dump(
+        {
+            "model": {},
+            "toolsets": [],
+            "display": {},
+            "compression": {"enabled": False},
+        },
+        sort_keys=False,
+        allow_unicode=True,
+    )
+
+
+def _template_files(use_default_template: bool) -> tuple[str, str]:
+    if not use_default_template:
+        return _fallback_template_config(), ""
+
+    hermes_dir = _hermes_dir()
+    config_path = hermes_dir / "config.yaml"
+    soul_path = hermes_dir / "SOUL.md"
+    config_text = (
+        config_path.read_text(encoding="utf-8")
+        if config_path.exists()
+        else _fallback_template_config()
+    )
+    soul_text = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
+    return config_text, soul_text
+
+
+def _normalize_import_config(text: str) -> str:
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="config_yaml is required")
+    try:
+        data = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid config_yaml: {exc}") from None
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="config_yaml must contain a mapping")
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
+def _create_profile_dir(profile_name: str) -> Path:
+    profile_dir = _new_profile_dir(profile_name)
+    try:
+        profile_dir.parent.mkdir(parents=True, exist_ok=True)
+        profile_dir.mkdir()
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail="profile already exists") from None
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to create profile: {exc}") from exc
+    return profile_dir
+
+
 @router.get("/profiles")
 async def get_profiles():
     return to_dict(collect_profiles())
@@ -230,14 +400,72 @@ async def profile_options():
     }
 
 
+@router.get("/profiles/active")
+def get_active_profile():
+    return {"active_profile": _read_active_profile_name()}
+
+
+@router.post("/profiles")
+def create_profile(body: ProfileCreateBody):
+    profile_name = _validate_new_profile_name(body.name)
+
+    def do_create():
+        profile_dir = _create_profile_dir(profile_name)
+        try:
+            config_text, soul_text = _template_files(body.use_default_template)
+            _atomic_write(profile_dir / "config.yaml", config_text)
+            _atomic_write(profile_dir / "SOUL.md", soul_text)
+            clear_cache()
+            return _profile_edit_payload(profile_name, profile_dir)
+        except Exception:
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            raise
+
+    try:
+        return _with_profiles_lock(do_create)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to create profile: {exc}") from exc
+
+
+@router.post("/profiles/import")
+def import_profile(body: ProfileImportBody):
+    profile_name = _validate_new_profile_name(body.name)
+
+    def do_import():
+        profile_dir = _create_profile_dir(profile_name)
+        try:
+            config_text = _normalize_import_config(body.config_yaml)
+            soul = body.soul
+            if soul and not soul.endswith("\n"):
+                soul += "\n"
+            _atomic_write(profile_dir / "config.yaml", config_text)
+            _atomic_write(profile_dir / "SOUL.md", soul)
+            clear_cache()
+            return _profile_edit_payload(profile_name, profile_dir)
+        except Exception:
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            raise
+
+    try:
+        return _with_profiles_lock(do_import)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to import profile: {exc}") from exc
+
+
 @router.get("/profiles/{profile_name}/edit")
 def get_profile_edit(profile_name: str):
+    profile_name = _validate_existing_profile_name(profile_name)
     profile_dir = _profile_dir(profile_name)
     return _profile_edit_payload(profile_name, profile_dir)
 
 
 @router.put("/profiles/{profile_name}/edit")
 def update_profile_edit(profile_name: str, body: ProfileEditBody):
+    profile_name = _validate_existing_profile_name(profile_name)
     profile_dir = _profile_dir(profile_name)
 
     def do_update():
@@ -288,8 +516,55 @@ def update_profile_edit(profile_name: str, body: ProfileEditBody):
         return _profile_edit_payload(profile_name, profile_dir)
 
     try:
-        return _with_profile_lock(profile_dir, do_update)
+        if profile_name == "default":
+            return _with_profiles_lock(do_update)
+        return _with_profiles_lock(lambda: _with_profile_lock(profile_dir, do_update))
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"failed to update profile: {exc}") from exc
+
+
+@router.post("/profiles/{profile_name}/use")
+def use_profile(profile_name: str):
+    profile_name = _validate_existing_profile_name(profile_name)
+    _profile_dir(profile_name)
+
+    def do_use():
+        path = _active_profile_path()
+        if profile_name == "default":
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"failed to set active profile: {exc}") from exc
+        else:
+            _atomic_write(path, f"{profile_name}\n")
+        clear_cache()
+        return {"active_profile": profile_name}
+
+    return _with_profiles_lock(do_use)
+
+
+@router.delete("/profiles/{profile_name}")
+def delete_profile(profile_name: str, body: ProfileDeleteBody = Body(...)):
+    profile_name = _validate_existing_profile_name(profile_name)
+    if profile_name == "default":
+        raise HTTPException(status_code=400, detail="default profile cannot be deleted")
+    if _normalize_profile_name(body.confirm_name) != profile_name:
+        raise HTTPException(status_code=400, detail="confirm_name must match profile name")
+    profile_dir = _profile_dir(profile_name)
+
+    def do_delete():
+        try:
+            shutil.rmtree(profile_dir)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"failed to delete profile: {exc}") from exc
+        if _read_active_profile_name() == profile_name:
+            try:
+                _active_profile_path().unlink(missing_ok=True)
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"failed to reset active profile: {exc}") from exc
+        clear_cache()
+        return {"ok": True, "name": profile_name}
+
+    return _with_profiles_lock(do_delete)

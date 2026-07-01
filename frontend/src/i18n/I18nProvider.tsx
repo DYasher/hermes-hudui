@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { translations, type Language, type TranslationKey } from './translations'
 
 interface I18nContextType {
@@ -24,6 +24,11 @@ function getInitialLang(): Language {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Language>(getInitialLang)
+
+  useEffect(() => {
+    document.documentElement.lang = lang
+    document.documentElement.setAttribute('data-lang', lang)
+  }, [lang])
 
   const setLang = (newLang: Language) => {
     setLangState(newLang)

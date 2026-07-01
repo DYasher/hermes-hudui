@@ -68,6 +68,12 @@ interface ProfileOptions {
   toolsets?: string[]
 }
 
+interface ActiveProfileResponse {
+  active_profile: string
+}
+
+type ProfileOperation = 'create' | 'import' | 'use' | 'delete'
+
 const inputStyle = {
   background: 'var(--hud-bg-deep)',
   border: '1px solid var(--hud-border)',
@@ -134,6 +140,232 @@ async function saveProfileEdit(profileName: string, body: ProfileEdit): Promise<
     throw new Error(err.detail || 'Failed to save profile')
   }
   return res.json()
+}
+
+async function createProfile(name: string, useDefaultTemplate: boolean): Promise<ProfileEdit> {
+  const res = await fetch('/api/profiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, use_default_template: useDefaultTemplate }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || 'Failed to create profile')
+  }
+  return res.json()
+}
+
+async function importProfile(name: string, configYaml: string, soul: string): Promise<ProfileEdit> {
+  const res = await fetch('/api/profiles/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, config_yaml: configYaml, soul }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || 'Failed to import profile')
+  }
+  return res.json()
+}
+
+async function useProfile(profileName: string): Promise<ActiveProfileResponse> {
+  const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}/use`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || 'Failed to use profile')
+  }
+  return res.json()
+}
+
+async function removeProfile(profileName: string): Promise<void> {
+  const res = await fetch(`/api/profiles/${encodeURIComponent(profileName)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm_name: profileName }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || 'Failed to delete profile')
+  }
+}
+
+function ProfileManager({
+  onCreated,
+  busy,
+  setBusy,
+  error,
+  setError,
+}: {
+  onCreated: (profileName: string) => void
+  busy: ProfileOperation | null
+  setBusy: (value: ProfileOperation | null) => void
+  error: string
+  setError: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  const [name, setName] = useState('')
+  const [useTemplate, setUseTemplate] = useState(true)
+  const [showImport, setShowImport] = useState(false)
+  const [importName, setImportName] = useState('')
+  const [importConfig, setImportConfig] = useState('')
+  const [importSoul, setImportSoul] = useState('')
+
+  const submitCreate = async () => {
+    const profileName = name.trim()
+    if (!profileName) return
+    setBusy('create')
+    setError('')
+    try {
+      const created = await createProfile(profileName, useTemplate)
+      setName('')
+      onCreated(created.name)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const submitImport = async () => {
+    const profileName = importName.trim()
+    if (!profileName || !importConfig.trim()) return
+    setBusy('import')
+    setError('')
+    try {
+      const imported = await importProfile(profileName, importConfig, importSoul)
+      setImportName('')
+      setImportConfig('')
+      setImportSoul('')
+      setShowImport(false)
+      onCreated(imported.name)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const loadImportFile = async (file: File | null) => {
+    if (!file) return
+    setImportConfig(await file.text())
+  }
+
+  return (
+    <div className="mb-3 p-3" style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[180px]">
+          <FieldLabel>{t('profiles.newName')}</FieldLabel>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                submitCreate()
+              }
+            }}
+            placeholder="work"
+            className="w-full text-[13px] px-2 py-1.5 outline-none"
+            style={inputStyle}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-[13px] min-h-8" style={{ color: 'var(--hud-text)' }}>
+          <input
+            type="checkbox"
+            checked={useTemplate}
+            onChange={e => setUseTemplate(e.target.checked)}
+          />
+          {t('profiles.useDefaultTemplate')}
+        </label>
+        <button
+          onClick={submitCreate}
+          disabled={!!busy || !name.trim()}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+          type="button"
+        >
+          {busy === 'create' ? '...' : t('profiles.addProfile')}
+        </button>
+        <button
+          onClick={() => setShowImport(value => !value)}
+          disabled={!!busy}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {t('profiles.importProfile')}
+        </button>
+      </div>
+
+      {showImport && (
+        <div className="mt-3 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-3" data-profile-import-form>
+          <div>
+            <FieldLabel>{t('profiles.importName')}</FieldLabel>
+            <input
+              value={importName}
+              onChange={e => setImportName(e.target.value)}
+              placeholder="imported"
+              className="w-full text-[13px] px-2 py-1.5 outline-none mb-3"
+              style={inputStyle}
+            />
+            <FieldLabel>{t('profiles.importSoul')}</FieldLabel>
+            <textarea
+              value={importSoul}
+              onChange={e => setImportSoul(e.target.value)}
+              data-profile-import-soul
+              className="w-full text-[12px] p-2 outline-none resize-y font-mono"
+              style={{ ...inputStyle, minHeight: '110px' }}
+            />
+          </div>
+          <div>
+            <FieldLabel>{t('profiles.importConfig')}</FieldLabel>
+            <input
+              type="file"
+              accept=".yaml,.yml,.txt,text/yaml,text/plain"
+              onChange={e => loadImportFile(e.target.files?.[0] ?? null)}
+              disabled={!!busy}
+              className="w-full text-[12px] mb-2"
+              style={{ color: 'var(--hud-text-dim)' }}
+            />
+            <textarea
+              value={importConfig}
+              onChange={e => setImportConfig(e.target.value)}
+              data-profile-import-config
+              placeholder="model:\n  provider: openai-codex\n  default: gpt-5"
+              className="w-full text-[12px] p-2 outline-none resize-y font-mono"
+              style={{ ...inputStyle, minHeight: '180px' }}
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => setShowImport(false)}
+                disabled={!!busy}
+                className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+                type="button"
+              >
+                {t('memory.cancel')}
+              </button>
+              <button
+                onClick={submitImport}
+                disabled={!!busy || !importName.trim() || !importConfig.trim()}
+                className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+                style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+                type="button"
+              >
+                {busy === 'import' ? '...' : t('profiles.importProfile')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-bg-surface)' }}>
+          {error}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ProfileEditor({
@@ -243,7 +475,11 @@ function ProfileEditor({
   }
 
   return (
-    <div className="mb-3 p-3" style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}>
+    <div
+      className="mb-3 p-3"
+      data-profile-editor={profileName}
+      style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}
+    >
       <div className="flex items-center justify-between mb-3">
         <div className="text-[13px] font-bold" style={{ color: 'var(--hud-primary)' }}>
           {t('profiles.editProfile')}: {profileName}
@@ -468,28 +704,70 @@ function ProfileEditor({
   )
 }
 
-function ProfileCard({ p, onEdit }: { p: Profile; onEdit: (name: string) => void }) {
+function ProfileCard({
+  p,
+  activeProfile,
+  busy,
+  confirmingDelete,
+  onEdit,
+  onUse,
+  onRequestDelete,
+}: {
+  p: Profile
+  activeProfile: string
+  busy: boolean
+  confirmingDelete: boolean
+  onEdit: (name: string) => void
+  onUse: (profile: Profile) => void
+  onRequestDelete: (profile: Profile) => void
+}) {
   const { t } = useTranslation()
   const gatewayStatus = p.gateway_status || 'unknown'
   const serverStatus = p.server_status || 'unknown'
+  const isActiveProfile = activeProfile === p.name
   return (
-    <div className="p-4" style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}>
+    <div
+      className="p-4"
+      data-profile-name={p.name}
+      style={{ background: 'var(--hud-bg-panel)', border: isActiveProfile ? '1px solid var(--hud-primary)' : '1px solid var(--hud-border)' }}
+    >
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <StatusDot status={gatewayStatus} />
         <span className="font-bold text-[14px]" style={{ color: 'var(--hud-primary)' }}>
           {p.name}
         </span>
         {p.is_default && <span className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>({t('profiles.default')})</span>}
+        {isActiveProfile && <span className="text-[11px] px-1.5 py-0.5" style={{ color: 'var(--hud-success)', border: '1px solid var(--hud-success)' }}>{t('profiles.current')}</span>}
         <span className="text-[13px] px-1.5 py-0.5 ml-auto"
           style={{ background: 'var(--hud-bg-hover)', color: p.is_local ? 'var(--hud-secondary)' : 'var(--hud-accent)' }}>
           {p.is_local ? t('profiles.local') : p.provider}
         </span>
         <button
+          onClick={() => onUse(p)}
+          disabled={busy || isActiveProfile}
+          className="px-2 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
+          style={{ background: isActiveProfile ? 'var(--hud-bg-hover)' : 'var(--hud-primary)', color: isActiveProfile ? 'var(--hud-text-dim)' : 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {busy ? '...' : isActiveProfile ? t('profiles.current') : t('profiles.useProfile')}
+        </button>
+        <button
           onClick={() => onEdit(p.name)}
+          disabled={busy}
           className="px-2 py-0.5 text-[11px] cursor-pointer"
           style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
+          type="button"
         >
           {t('memory.edit')}
+        </button>
+        <button
+          onClick={() => onRequestDelete(p)}
+          disabled={busy || p.is_default}
+          className="px-2 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
+          style={{ background: confirmingDelete ? 'var(--hud-error)' : 'var(--hud-bg-hover)', color: confirmingDelete ? 'var(--hud-bg-deep)' : 'var(--hud-error)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {busy ? '...' : confirmingDelete ? t('profiles.confirmDelete') : t('memory.delete')}
         </button>
         {gatewayStatus === 'active' && (
           <span className="text-[13px]" style={{ color: 'var(--hud-success)' }}>{t('profiles.gatewayUp')}</span>
@@ -637,7 +915,12 @@ export default function ProfilesPanel() {
   const { t } = useTranslation()
   const { data, isLoading, mutate } = useApi<ProfilesResponse>('/profiles', 30000)
   const { data: options } = useApi<ProfileOptions>('/profiles/options', 60000)
+  const { data: activeProfileData, mutate: mutateActiveProfile } = useApi<ActiveProfileResponse>('/profiles/active', 30000)
   const [editing, setEditing] = useState<string | null>(null)
+  const [busy, setBusy] = useState<ProfileOperation | null>(null)
+  const [busyProfile, setBusyProfile] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
 
   if (isLoading && !data) {
     return <Panel title={t('profiles.title')} className="col-span-full"><div className="glow text-[13px] animate-pulse">{t('profiles.loading')}</div></Panel>
@@ -645,8 +928,61 @@ export default function ProfilesPanel() {
 
   const profiles = data?.profiles || []
 
+  const handleCreated = async (profileName: string) => {
+    await mutate()
+    setEditing(profileName)
+  }
+
+  const handleUse = async (profile: Profile) => {
+    if (busy) return
+    setBusy('use')
+    setBusyProfile(profile.name)
+    setConfirmingDelete(null)
+    setError('')
+    try {
+      await useProfile(profile.name)
+      await Promise.all([mutate(), mutateActiveProfile()])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setBusy(null)
+      setBusyProfile(null)
+    }
+  }
+
+  const handleRequestDelete = async (profile: Profile) => {
+    if (busy || profile.is_default) return
+    if (confirmingDelete !== profile.name) {
+      setConfirmingDelete(profile.name)
+      setError('')
+      return
+    }
+
+    setBusy('delete')
+    setBusyProfile(profile.name)
+    setError('')
+    try {
+      await removeProfile(profile.name)
+      if (editing === profile.name) setEditing(null)
+      setConfirmingDelete(null)
+      await mutate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setBusy(null)
+      setBusyProfile(null)
+    }
+  }
+
   return (
     <Panel title={`${t('profiles.panelTitle')} — ${data?.total || 0} ${t('profiles.total')}, ${data?.active_count || 0} ${t('profiles.activeCount')}`} className="col-span-full">
+      <ProfileManager
+        onCreated={handleCreated}
+        busy={busy}
+        setBusy={setBusy}
+        error={error}
+        setError={setError}
+      />
       {editing && (
         <ProfileEditor
           profileName={editing}
@@ -660,7 +996,16 @@ export default function ProfilesPanel() {
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {profiles.map(profile => (
-          <ProfileCard key={profile.name} p={profile} onEdit={setEditing} />
+          <ProfileCard
+            key={profile.name}
+            p={profile}
+            activeProfile={activeProfileData?.active_profile || 'default'}
+            busy={busyProfile === profile.name}
+            confirmingDelete={confirmingDelete === profile.name}
+            onEdit={setEditing}
+            onUse={handleUse}
+            onRequestDelete={handleRequestDelete}
+          />
         ))}
       </div>
     </Panel>

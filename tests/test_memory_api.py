@@ -13,6 +13,7 @@ time, so pointing it at a tmp dir is just an env var.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -22,10 +23,16 @@ from backend.api.memory import (
     AddBody,
     DeleteBody,
     EditBody,
+    MemoryProviderConfigBody,
+    MemoryProviderBody,
     _read_entries,
     add_entry,
+    check_memory_provider_status,
     delete_entry,
     edit_entry,
+    get_memory_providers,
+    save_memory_provider_config,
+    set_memory_provider,
 )
 
 
@@ -38,6 +45,14 @@ def hermes_home(tmp_path: Path, monkeypatch) -> Path:
 def _memory_file(home: Path, target: str = "memory") -> Path:
     name = "USER.md" if target == "user" else "MEMORY.md"
     return home / "memories" / name
+
+
+def _config_file(home: Path) -> Path:
+    return home / "config.yaml"
+
+
+def _env_file(home: Path) -> Path:
+    return home / ".env"
 
 
 def test_add_creates_file_with_single_entry(hermes_home: Path) -> None:
@@ -165,8 +180,172 @@ def test_atomic_writes_leave_no_temp_files(hermes_home: Path) -> None:
     assert leftovers == []
 
 
+def test_memory_provider_status_defaults_to_builtin_only(hermes_home: Path) -> None:
+    status = get_memory_providers()
+
+    assert status["builtin"]["enabled"] is True
+    assert status["active_provider"] == ""
+    assert "honcho" in status["providers"]
+    assert "supermemory" in status["providers"]
+    assert "memori" in status["providers"]
+    assert status["providers"]["honcho"]["setup_command"] == "hermes memory setup"
+    assert status["providers"]["honcho"]["config_command"] == "hermes config set memory.provider honcho"
+
+
+def test_memory_provider_status_reads_config(hermes_home: Path) -> None:
+    _config_file(hermes_home).write_text(
+        "memory:\n  provider: holographic\n  memory_char_limit: 3000\n",
+        encoding="utf-8",
+    )
+
+    status = get_memory_providers()
+
+    assert status["active_provider"] == "holographic"
+    assert status["providers"]["holographic"]["active"] is True
+
+
+def test_memory_provider_status_reads_memori_config(hermes_home: Path) -> None:
+    _config_file(hermes_home).write_text(
+        "memory:\n  provider: memori\n",
+        encoding="utf-8",
+    )
+
+    status = get_memory_providers()
+
+    assert status["active_provider"] == "memori"
+    assert status["providers"]["memori"]["config_command"] == "hermes config set memory.provider memori"
+
+
+def test_set_memory_provider_writes_config_preserving_memory_limits(hermes_home: Path) -> None:
+    _config_file(hermes_home).write_text(
+        "memory:\n  memory_char_limit: 3000\n  user_char_limit: 2000\n",
+        encoding="utf-8",
+    )
+
+    result = set_memory_provider(MemoryProviderBody(provider="mem0"))
+
+    assert result["active_provider"] == "mem0"
+    text = _config_file(hermes_home).read_text(encoding="utf-8")
+    assert "provider: mem0" in text
+    assert "memory_char_limit: 3000" in text
+    assert "user_char_limit: 2000" in text
+
+
+def test_set_memory_provider_accepts_memori(hermes_home: Path) -> None:
+    result = set_memory_provider(MemoryProviderBody(provider="memori"))
+
+    assert result["active_provider"] == "memori"
+    assert "provider: memori" in _config_file(hermes_home).read_text(encoding="utf-8")
+
+
+def test_set_memory_provider_off_removes_external_provider(hermes_home: Path) -> None:
+    _config_file(hermes_home).write_text(
+        "memory:\n  provider: honcho\n  user_char_limit: 2000\n",
+        encoding="utf-8",
+    )
+
+    result = set_memory_provider(MemoryProviderBody(provider=""))
+
+    assert result["active_provider"] == ""
+    text = _config_file(hermes_home).read_text(encoding="utf-8")
+    assert "provider:" not in text
+    assert "user_char_limit: 2000" in text
+
+
+def test_set_memory_provider_rejects_unknown_provider(hermes_home: Path) -> None:
+    with pytest.raises(HTTPException) as exc:
+        set_memory_provider(MemoryProviderBody(provider="unknown"))
+
+    assert exc.value.status_code == 400
+
+
+def test_save_honcho_config_writes_json_and_redacts_secret(hermes_home: Path) -> None:
+    result = save_memory_provider_config(
+        "honcho",
+        MemoryProviderConfigBody(
+            fields={
+                "apiKey": "honcho-secret",
+                "baseUrl": "http://localhost:8000",
+                "peerName": "asher",
+                "workspace": "hermes",
+                "aiPeer": "coder",
+            }
+        ),
+    )
+
+    text = (hermes_home / "honcho.json").read_text(encoding="utf-8")
+    assert "honcho-secret" in text
+    assert "http://localhost:8000" in text
+    assert '"peerName": "asher"' in text
+    assert result["providers"]["honcho"]["configured"] is True
+    assert result["providers"]["honcho"]["config_values"]["apiKey"]["configured"] is True
+    assert result["providers"]["honcho"]["config_values"]["apiKey"]["value"] == ""
+    assert "honcho-secret" not in str(result)
+
+
+def test_save_openviking_config_writes_env_preserving_existing_values(hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text("EXISTING=yes\n", encoding="utf-8")
+
+    result = save_memory_provider_config(
+        "openviking",
+        MemoryProviderConfigBody(
+            fields={
+                "OPENVIKING_ENDPOINT": "http://127.0.0.1:9090",
+                "OPENVIKING_AGENT": "hermes",
+            }
+        ),
+    )
+
+    text = _env_file(hermes_home).read_text(encoding="utf-8")
+    assert "EXISTING=yes" in text
+    assert "OPENVIKING_ENDPOINT=http://127.0.0.1:9090" in text
+    assert "OPENVIKING_AGENT=hermes" in text
+    assert result["providers"]["openviking"]["configured"] is True
+
+
+def test_provider_payload_reports_config_state_without_secret(hermes_home: Path) -> None:
+    _config_file(hermes_home).write_text("memory:\n  provider: mem0\n", encoding="utf-8")
+    _env_file(hermes_home).write_text("MEM0_API_KEY=mem0-secret\n", encoding="utf-8")
+    (hermes_home / "mem0.json").write_text('{"user_id": "u1"}\n', encoding="utf-8")
+
+    status = get_memory_providers()
+
+    mem0 = status["providers"]["mem0"]
+    assert status["active_provider"] == "mem0"
+    assert mem0["configured"] is True
+    assert mem0["readiness"] in {"selected", "ready"}
+    assert mem0["config_values"]["MEM0_API_KEY"]["configured"] is True
+    assert mem0["config_values"]["MEM0_API_KEY"]["value"] == ""
+    assert mem0["config_values"]["user_id"]["value"] == "u1"
+    assert "mem0-secret" not in str(status)
+
+
+def test_memory_provider_check_runs_official_status_command(monkeypatch, hermes_home: Path) -> None:
+    _config_file(hermes_home).write_text("memory:\n  provider: honcho\n", encoding="utf-8")
+
+    monkeypatch.setattr("backend.api.memory.shutil.which", lambda name: "/usr/bin/hermes")
+    monkeypatch.setattr(
+        "backend.api.memory.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="Memory provider: honcho\nStatus: active\n",
+            stderr="",
+        ),
+    )
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="honcho"))
+
+    assert result["provider"] == "honcho"
+    assert result["status_command"]["ok"] is True
+    assert "Status: active" in result["status_command"]["output"]
+
+
 def test_memory_routes_are_registered(registered_routes) -> None:
     assert ("GET", "/api/memory") in registered_routes
     assert ("POST", "/api/memory") in registered_routes
     assert ("PUT", "/api/memory") in registered_routes
     assert ("DELETE", "/api/memory") in registered_routes
+    assert ("GET", "/api/memory/providers") in registered_routes
+    assert ("PUT", "/api/memory/providers") in registered_routes
+    assert ("PUT", "/api/memory/providers/{provider}/config") in registered_routes
+    assert ("POST", "/api/memory/providers/check") in registered_routes

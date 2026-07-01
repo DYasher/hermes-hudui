@@ -33,9 +33,19 @@ interface TopBarProps {
 }
 
 export default function TopBar({ activeTab, onTabChange }: TopBarProps) {
-  const { theme, setTheme, scanlines, setScanlines } = useTheme()
+  const {
+    theme,
+    setTheme,
+    scanlines,
+    setScanlines,
+    panelBackground,
+    setPanelBackground,
+    panelBackgroundAuto,
+    setPanelBackgroundAuto,
+  } = useTheme()
   const { t, lang, setLang } = useI18n()
   const [showThemePicker, setShowThemePicker] = useState(false)
+  const [panelBackgroundDraft, setPanelBackgroundDraft] = useState(panelBackground)
   const [time, setTime] = useState(new Date())
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement>>>({})
 
@@ -55,6 +65,19 @@ export default function TopBar({ activeTab, onTabChange }: TopBarProps) {
     window.addEventListener('resize', scrollActiveTab)
     return () => window.removeEventListener('resize', scrollActiveTab)
   }, [activeTab])
+
+  useEffect(() => {
+    setPanelBackgroundDraft(panelBackground)
+  }, [panelBackground])
+
+  const handlePanelBackgroundSave = () => {
+    setPanelBackground(panelBackgroundDraft)
+  }
+
+  const handlePanelBackgroundClear = () => {
+    setPanelBackgroundDraft('')
+    setPanelBackground('')
+  }
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -143,7 +166,7 @@ export default function TopBar({ activeTab, onTabChange }: TopBarProps) {
           <span className="hidden md:inline">Theme</span>
         </button>
         {showThemePicker && (
-          <div className="absolute right-0 top-full mt-1 z-50 py-1 min-w-[180px]"
+          <div className="absolute right-0 top-full mt-1 z-50 py-1 min-w-[260px] max-w-[320px]"
                style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
             {THEMES.map(themeItem => (
               <button
@@ -159,6 +182,61 @@ export default function TopBar({ activeTab, onTabChange }: TopBarProps) {
                 {themeItem.icon} {t(themeItem.labelKey as any)}
               </button>
             ))}
+            <div className="border-t my-1" style={{ borderColor: 'var(--hud-border)' }} />
+            <div className="px-3 py-2">
+              <div className="mb-2 text-[11px] uppercase tracking-widest" style={{ color: 'var(--hud-text-dim)' }}>
+                {t('theme.panelBackground')}
+              </div>
+              <input
+                value={panelBackgroundDraft}
+                onChange={(e) => setPanelBackgroundDraft(e.target.value)}
+                onBlur={handlePanelBackgroundSave}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handlePanelBackgroundSave()
+                  }
+                }}
+                className="w-full px-2 py-1.5 text-[12px]"
+                style={{
+                  color: 'var(--hud-text)',
+                  background: 'var(--hud-bg-surface)',
+                  border: '1px solid var(--hud-border)',
+                }}
+                placeholder={t('theme.panelBackgroundPlaceholder')}
+                aria-label={t('theme.panelBackground')}
+              />
+              <div className="mt-2 flex justify-between gap-2">
+                <button
+                  onClick={() => setPanelBackgroundAuto(!panelBackgroundAuto)}
+                  className="px-2 py-1 text-[11px] uppercase tracking-wider cursor-pointer"
+                  style={{
+                    color: panelBackgroundAuto ? 'var(--hud-primary)' : 'var(--hud-text-dim)',
+                    border: '1px solid var(--hud-border)',
+                    background: 'transparent',
+                  }}
+                  aria-pressed={panelBackgroundAuto}
+                >
+                  {panelBackgroundAuto ? '◉' : '○'} {t('theme.autoWallpaper')}
+                </button>
+                <button
+                  onClick={handlePanelBackgroundClear}
+                  className="px-2 py-1 text-[11px] uppercase tracking-wider cursor-pointer"
+                  style={{
+                    color: panelBackground ? 'var(--hud-primary)' : 'var(--hud-text-dim)',
+                    border: '1px solid var(--hud-border)',
+                    background: 'transparent',
+                  }}
+                >
+                  {t('theme.clearBackground')}
+                </button>
+              </div>
+              {panelBackgroundAuto && panelBackground && (
+                <div className="mt-2 text-[10px] leading-4" style={{ color: 'var(--hud-text-dim)' }}>
+                  {t('theme.panelBackgroundOverridesAuto')}
+                </div>
+              )}
+            </div>
             <div className="border-t my-1" style={{ borderColor: 'var(--hud-border)' }} />
             <button
               onClick={() => setScanlines(!scanlines)}

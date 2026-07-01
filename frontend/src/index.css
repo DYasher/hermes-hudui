@@ -14,6 +14,19 @@
   --hud-bg: var(--hud-bg-deep);
   --hud-panel-alt: var(--hud-bg-surface);
   --hud-on-primary: var(--hud-bg-deep);
+  --hud-panel-bg-image: none;
+  --hud-panel-bg-opacity: 0;
+  --hud-wallpaper-filter: saturate(1.08) contrast(1.04) brightness(0.82);
+  --hud-wallpaper-glow: rgba(255, 255, 255, 0.14);
+  --hud-wallpaper-overlay-top: rgba(0, 0, 0, 0.08);
+  --hud-wallpaper-overlay-bottom: rgba(0, 0, 0, 0.28);
+  --hud-glass-surface: color-mix(in srgb, var(--hud-bg-surface) 58%, transparent);
+  --hud-glass-panel: color-mix(in srgb, var(--hud-bg-panel) 46%, transparent);
+}
+
+:root:lang(en) {
+  font-size: 16px;
+  font-size-adjust: 0.58;
 }
 
 /* ── Neural Awakening (default) ─────────────────────────── */
@@ -36,6 +49,12 @@
   --hud-error: #ff4444;
   --hud-gradient-start: #00afff;
   --hud-gradient-end: #00ffff;
+  --hud-wallpaper-filter: saturate(1.14) contrast(1.08) brightness(0.72) hue-rotate(-8deg);
+  --hud-wallpaper-glow: rgba(0, 212, 255, 0.22);
+  --hud-wallpaper-overlay-top: rgba(4, 10, 24, 0.12);
+  --hud-wallpaper-overlay-bottom: rgba(4, 10, 24, 0.36);
+  --hud-glass-surface: color-mix(in srgb, #10172f 18%, transparent);
+  --hud-glass-panel: color-mix(in srgb, #0e1429 10%, transparent);
 }
 
 /* ── Hermes Teal (official) ─────────────────────────────── */
@@ -58,6 +77,12 @@
   --hud-error: #ff7a82;
   --hud-gradient-start: #ffe6cb;
   --hud-gradient-end: #ffbd38;
+  --hud-wallpaper-filter: saturate(1.08) contrast(1.05) brightness(0.78) sepia(0.08);
+  --hud-wallpaper-glow: rgba(255, 189, 56, 0.18);
+  --hud-wallpaper-overlay-top: rgba(2, 22, 22, 0.08);
+  --hud-wallpaper-overlay-bottom: rgba(2, 22, 22, 0.28);
+  --hud-glass-surface: color-mix(in srgb, #0a2a29 16%, transparent);
+  --hud-glass-panel: color-mix(in srgb, #0c302f 10%, transparent);
 }
 
 /* ── Blade Runner ───────────────────────────────────────── */
@@ -80,6 +105,12 @@
   --hud-error: #ff0087;
   --hud-gradient-start: #d78700;
   --hud-gradient-end: #ffaf00;
+  --hud-wallpaper-filter: saturate(1.18) contrast(1.1) brightness(0.68) sepia(0.18);
+  --hud-wallpaper-glow: rgba(255, 135, 0, 0.2);
+  --hud-wallpaper-overlay-top: rgba(14, 8, 0, 0.08);
+  --hud-wallpaper-overlay-bottom: rgba(14, 8, 0, 0.34);
+  --hud-glass-surface: color-mix(in srgb, #1b1408 15%, transparent);
+  --hud-glass-panel: color-mix(in srgb, #171108 10%, transparent);
 }
 
 /* ── fsociety ───────────────────────────────────────────── */
@@ -102,6 +133,12 @@
   --hud-error: #d70000;
   --hud-gradient-start: #008700;
   --hud-gradient-end: #00ff00;
+  --hud-wallpaper-filter: saturate(0.84) contrast(1.16) brightness(0.58) grayscale(0.18);
+  --hud-wallpaper-glow: rgba(0, 255, 0, 0.14);
+  --hud-wallpaper-overlay-top: rgba(0, 0, 0, 0.12);
+  --hud-wallpaper-overlay-bottom: rgba(0, 0, 0, 0.4);
+  --hud-glass-surface: color-mix(in srgb, #0a0a0a 12%, transparent);
+  --hud-glass-panel: color-mix(in srgb, #090909 8%, transparent);
 }
 
 /* ── Anime (Mewtwo) ─────────────────────────────────────── */
@@ -124,6 +161,12 @@
   --hud-error: #ff5555;
   --hud-gradient-start: #875fff;
   --hud-gradient-end: #ff5fff;
+  --hud-wallpaper-filter: saturate(1.16) contrast(1.06) brightness(0.72) hue-rotate(6deg);
+  --hud-wallpaper-glow: rgba(255, 121, 198, 0.18);
+  --hud-wallpaper-overlay-top: rgba(18, 0, 32, 0.08);
+  --hud-wallpaper-overlay-bottom: rgba(18, 0, 32, 0.3);
+  --hud-glass-surface: color-mix(in srgb, #1b0430 16%, transparent);
+  --hud-glass-panel: color-mix(in srgb, #17022b 10%, transparent);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -168,31 +211,182 @@ body {
    Panel system — the core visual language
    ═══════════════════════════════════════════════════════════ */
 
+.hud-workspace {
+  position: relative;
+  isolation: isolate;
+}
+
+.hud-workspace::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--hud-panel-bg-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--hud-panel-bg-opacity);
+  filter: var(--hud-wallpaper-filter);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hud-workspace::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, var(--hud-wallpaper-glow) 0%, transparent 42%),
+    linear-gradient(180deg,
+      var(--hud-wallpaper-overlay-top) 0%,
+      var(--hud-wallpaper-overlay-bottom) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hud-workspace > * {
+  position: relative;
+  z-index: 2;
+}
+
 .hud-panel {
-  background: var(--hud-bg-surface);
-  border: 1px solid var(--hud-border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.006) 100%),
+    var(--hud-glass-surface);
+  backdrop-filter: blur(10px) saturate(1.08);
+  border: 1px solid color-mix(in srgb, var(--hud-border) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.025), 0 6px 18px rgba(0,0,0,0.1);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.hud-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0) 35%);
+  pointer-events: none;
+}
+
+.hud-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 .hud-panel:hover {
   border-color: var(--hud-border-bright);
-  box-shadow: 0 0 12px -4px var(--hud-primary-glow);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 0 16px -8px var(--hud-primary-glow), 0 10px 24px rgba(0,0,0,0.14);
 }
 
 .hud-panel-title {
   flex-shrink: 0;
   padding: 8px 14px 4px;
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--hud-primary);
+  background: color-mix(in srgb, var(--hud-glass-panel) 72%, transparent);
+  backdrop-filter: blur(8px) saturate(1.04);
   border-bottom: 1px solid var(--hud-border);
   text-shadow: 0 0 8px var(--hud-primary-glow);
+}
+
+[data-testid="top-bar"] {
+  backdrop-filter: blur(10px) saturate(1.06);
+  background: color-mix(in srgb, var(--hud-glass-surface) 78%, transparent) !important;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.02);
+}
+
+:root:lang(en) {
+  font-size: 15px;
+}
+
+.text-\[10px\] {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.text-\[11px\] {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+.text-\[15px\] {
+  font-size: 16px !important;
+  line-height: 1.3 !important;
+}
+
+:root:lang(en) .text-\[10px\] {
+  font-size: 16px !important;
+}
+
+:root:lang(en) .text-\[11px\] {
+  font-size: 17px !important;
+}
+
+:root:lang(en) .text-\[12px\] {
+  font-size: 15px !important;
+}
+
+:root:lang(en) .text-\[13px\] {
+  font-size: 16px !important;
+}
+
+:root:lang(en) .text-\[14px\] {
+  font-size: 17px !important;
+}
+
+:root:lang(en) .text-\[15px\] {
+  font-size: 19px !important;
+}
+
+.tracking-widest {
+  letter-spacing: 0.08em !important;
+}
+
+:root:lang(en) .tracking-widest {
+  letter-spacing: 0.045em !important;
+}
+
+.tracking-wider {
+  letter-spacing: 0.05em !important;
+}
+
+:root:lang(en) .tracking-wider {
+  letter-spacing: 0.03em !important;
+}
+
+:root:lang(en) .font-mono {
+  font-size: 1.08em;
+}
+
+:root:lang(en) .tabular-nums {
+  font-size: 1.08em;
+}
+
+.hud-workspace--dashboard .dashboard-glass-block {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.015) 0%, rgba(255,255,255,0.005) 100%),
+    color-mix(in srgb, var(--hud-glass-surface) 72%, transparent);
+  backdrop-filter: blur(8px) saturate(1.04);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.018);
+}
+
+.hud-workspace--dashboard .dashboard-glass-chip {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.012) 0%, rgba(255,255,255,0.004) 100%),
+    color-mix(in srgb, var(--hud-glass-surface) 58%, transparent);
+  backdrop-filter: blur(7px) saturate(1.02);
+}
+
+.hud-workspace--dashboard .dashboard-glass-callout {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.012) 0%, rgba(255,255,255,0.004) 100%),
+    color-mix(in srgb, var(--hud-glass-panel) 60%, transparent);
+  backdrop-filter: blur(7px) saturate(1.02);
 }
 
 .hud-panel-content {
@@ -298,19 +492,32 @@ body {
    ═══════════════════════════════════════════════════════════ */
 
 .stat-value {
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--hud-primary);
-  line-height: 1;
+  line-height: 1.05;
+}
+
+:root:lang(en) .stat-value {
+  font-size: 24px;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--hud-text-dim);
   margin-top: 3px;
+}
+
+:root:lang(en) .stat-label {
+  font-size: 17px;
+  letter-spacing: 0.03em;
+}
+
+:root:lang(en) .stat-delta {
+  font-size: 15px;
 }
 
 .stat-delta {

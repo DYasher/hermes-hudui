@@ -136,13 +136,13 @@ export default function App() {
 
       {/* Chat tab: fixed-height, no page scroll — message thread scrolls internally */}
       {activeTab === 'chat' ? (
-        <div style={{ flex: '1 1 0', height: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div className="hud-workspace" style={{ flex: '1 1 0', height: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div className="p-2 h-full">
             <TabContent tab={activeTab} />
           </div>
         </div>
       ) : (
-        <div className="overflow-y-auto" style={{ flex: '1 1 0', height: 0, minHeight: 0 }}>
+        <div className={`hud-workspace overflow-y-auto${activeTab === 'dashboard' ? ' hud-workspace--dashboard' : ''}`} style={{ flex: '1 1 0', height: 0, minHeight: 0 }}>
           <div className={`grid gap-2 p-2 ${GRID_CLASS[activeTab]}`}>
             <TabContent tab={activeTab} />
           </div>
