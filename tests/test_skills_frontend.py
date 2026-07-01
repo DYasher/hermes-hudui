@@ -157,6 +157,33 @@ def test_skills_panel_exposes_management_actions_and_editor() -> None:
     assert "skills.disableSkill" in panel
 
 
+def test_skill_item_places_management_actions_on_right_side() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "grid grid-cols-[auto_minmax(0,1fr)_auto]" in panel
+    assert "data-skill-row-actions" in panel
+    assert "deleteConfirming" in panel
+    assert "skills.confirmDeleteAction" in panel
+    assert "mt-2 flex flex-wrap gap-1" not in panel
+
+
+def test_skills_panel_supports_batch_operations_with_delete_confirmation() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "selectedSkillPaths" in panel
+    assert "toggleSelectSkill" in panel
+    assert "selectedSkills" in panel
+    assert "handleBatchSetEnabled" in panel
+    assert "handleBatchDelete" in panel
+    assert "batchDeleteConfirming" in panel
+    assert "skills.batchEnable" in panel
+    assert "skills.batchDisable" in panel
+    assert "skills.batchDelete" in panel
+    assert "skills.batchConfirmDelete" in panel
+    assert "skills.selectAllVisible" in panel
+    assert "skills.clearSelection" in panel
+
+
 def test_skills_panel_exposes_zip_import_and_market_install() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
@@ -249,8 +276,16 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.deleteSkill': 'Delete'" in translations
     assert "'skills.enableSkill': 'Enable'" in translations
     assert "'skills.disableSkill': 'Disable'" in translations
+    assert "'skills.confirmDeleteAction': 'Confirm delete'" in translations
     assert "'skills.enabled': 'Enabled'" in translations
     assert "'skills.disabled': 'Disabled'" in translations
+    assert "'skills.batchEnable': 'Enable selected'" in translations
+    assert "'skills.batchDisable': 'Disable selected'" in translations
+    assert "'skills.batchDelete': 'Delete selected'" in translations
+    assert "'skills.batchConfirmDelete': 'Confirm batch delete'" in translations
+    assert "'skills.selectedCount': '{count} selected'" in translations
+    assert "'skills.selectAllVisible': 'Select visible'" in translations
+    assert "'skills.clearSelection': 'Clear'" in translations
     assert "'skills.importZip': 'Import ZIP'" in translations
     assert "'skills.skillMarket': 'Skill Market'" in translations
     assert "'skills.installSkill': 'Install'" in translations
@@ -281,8 +316,16 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.deleteSkill': '删除'" in translations
     assert "'skills.enableSkill': '启用'" in translations
     assert "'skills.disableSkill': '禁用'" in translations
+    assert "'skills.confirmDeleteAction': '确认删除'" in translations
     assert "'skills.enabled': '已启用'" in translations
     assert "'skills.disabled': '已禁用'" in translations
+    assert "'skills.batchEnable': '批量启用'" in translations
+    assert "'skills.batchDisable': '批量禁用'" in translations
+    assert "'skills.batchDelete': '批量删除'" in translations
+    assert "'skills.batchConfirmDelete': '确认批量删除'" in translations
+    assert "'skills.selectedCount': '已选择 {count} 个'" in translations
+    assert "'skills.selectAllVisible': '选择当前列表'" in translations
+    assert "'skills.clearSelection': '清空'" in translations
     assert "'skills.importZip': '导入 ZIP'" in translations
     assert "'skills.skillMarket': '技能市场'" in translations
     assert "'skills.installSkill': '安装'" in translations

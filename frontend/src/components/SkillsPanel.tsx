@@ -382,6 +382,9 @@ function SkillItem({
   onSelect,
   onToggle,
   onDelete,
+  selectedForBatch,
+  onBatchSelect,
+  deleteConfirming,
   busy,
 }: {
   skill: SkillInfo
@@ -390,6 +393,9 @@ function SkillItem({
   onSelect: () => void
   onToggle: (skill: SkillInfo) => void
   onDelete: (skill: SkillInfo) => void
+  selectedForBatch: boolean
+  onBatchSelect: (skill: SkillInfo, selected: boolean) => void
+  deleteConfirming: boolean
   busy?: boolean
 }) {
   const { t } = useTranslation()
@@ -397,16 +403,24 @@ function SkillItem({
   const categoryDisplay = getSkillCategoryDisplay(skill.category || '', t)
   return (
     <div
-      className="w-full py-2 px-2 text-[13px] transition-colors"
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 w-full py-2 px-2 text-[13px] transition-colors"
       style={{
         background: selected ? 'var(--hud-bg-hover)' : 'transparent',
         borderLeft: selected ? '2px solid var(--hud-primary)' : '2px solid var(--hud-border)',
       }}
     >
+      <label className="pt-1 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={selectedForBatch}
+          onChange={event => onBatchSelect(skill, event.target.checked)}
+          disabled={busy}
+        />
+      </label>
       <button
         type="button"
         onClick={onSelect}
-        className="block w-full text-left cursor-pointer"
+        className="block w-full min-w-0 text-left cursor-pointer"
         title={t('skills.openDetail')}
       >
         <div className="flex items-center gap-2 mb-0.5">
@@ -444,7 +458,7 @@ function SkillItem({
           }
         </div>
       </button>
-      <div className="mt-2 flex flex-wrap gap-1">
+      <div data-skill-row-actions className="flex shrink-0 flex-wrap justify-end gap-1">
         <button
           type="button"
           onClick={() => onToggle(skill)}
@@ -461,7 +475,7 @@ function SkillItem({
           className="px-1.5 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
           style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}
         >
-          {t('skills.deleteSkill')}
+          {deleteConfirming ? t('skills.confirmDeleteAction') : t('skills.deleteSkill')}
         </button>
       </div>
     </div>
@@ -1268,7 +1282,10 @@ export default function SkillsPanel() {
   const [importOpen, setImportOpen] = useState(false)
   const [marketOpen, setMarketOpen] = useState(false)
   const [busySkillPath, setBusySkillPath] = useState('')
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchDeleteConfirming, setBatchDeleteConfirming] = useState(false)
   const [confirmDeletePath, setConfirmDeletePath] = useState('')
+  const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([])
   const [operationError, setOperationError] = useState('')
 
   const refreshSkills = useCallback(async () => {
@@ -1278,6 +1295,8 @@ export default function SkillsPanel() {
   const handleToggleSkill = async (skill: SkillInfo) => {
     setBusySkillPath(skill.path)
     setOperationError('')
+    setConfirmDeletePath('')
+    setBatchDeleteConfirming(false)
     try {
       await toggleSkillEnabled(skill.name, skill.enabled === false)
       await refreshSkills()
@@ -1291,6 +1310,7 @@ export default function SkillsPanel() {
   const handleDeleteSkill = async (skill: SkillInfo) => {
     if (confirmDeletePath !== skill.path) {
       setConfirmDeletePath(skill.path)
+      setBatchDeleteConfirming(false)
       return
     }
     setBusySkillPath(skill.path)
@@ -1298,6 +1318,7 @@ export default function SkillsPanel() {
     try {
       await deleteSkill(skill.path)
       if (selectedSkillPath === skill.path) setSelectedSkillPath(null)
+      setSelectedSkillPaths(current => current.filter(path => path !== skill.path))
       setConfirmDeletePath('')
       await refreshSkills()
     } catch (err) {
@@ -1305,6 +1326,21 @@ export default function SkillsPanel() {
     } finally {
       setBusySkillPath('')
     }
+  }
+
+  const toggleSelectSkill = (skill: SkillInfo, selected: boolean) => {
+    setBatchDeleteConfirming(false)
+    setSelectedSkillPaths(current => {
+      if (selected) {
+        return current.includes(skill.path) ? current : [...current, skill.path]
+      }
+      return current.filter(path => path !== skill.path)
+    })
+  }
+
+  const clearBatchSelection = () => {
+    setSelectedSkillPaths([])
+    setBatchDeleteConfirming(false)
   }
 
   // Only show loading on initial load
@@ -1332,7 +1368,60 @@ export default function SkillsPanel() {
 
   // Skills in selected category
   const catSkills = selectedCat ? byCategory[selectedCat] || [] : []
+  const visibleSkills = selectedCat ? catSkills : recentlyMod
+  const selectedSkills = visibleSkills.filter(skill => selectedSkillPaths.includes(skill.path))
   const selectedCategoryDisplay = selectedCat ? getSkillCategoryDisplay(selectedCat, t) : null
+  const selectedCountLabel = t('skills.selectedCount').replace('{count}', String(selectedSkills.length))
+
+  const selectAllVisible = () => {
+    setSelectedSkillPaths(visibleSkills.map(skill => skill.path))
+    setBatchDeleteConfirming(false)
+  }
+
+  const handleBatchSetEnabled = async (enabled: boolean) => {
+    if (!selectedSkills.length) return
+    setBatchBusy(true)
+    setOperationError('')
+    setConfirmDeletePath('')
+    setBatchDeleteConfirming(false)
+    try {
+      for (const skill of selectedSkills) {
+        await toggleSkillEnabled(skill.name, enabled)
+      }
+      clearBatchSelection()
+      await refreshSkills()
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (!selectedSkills.length) return
+    if (!batchDeleteConfirming) {
+      setBatchDeleteConfirming(true)
+      setConfirmDeletePath('')
+      return
+    }
+    setBatchBusy(true)
+    setOperationError('')
+    try {
+      const deletingPaths = selectedSkills.map(skill => skill.path)
+      for (const skill of selectedSkills) {
+        await deleteSkill(skill.path)
+      }
+      if (selectedSkillPath && deletingPaths.includes(selectedSkillPath)) {
+        setSelectedSkillPath(null)
+      }
+      clearBatchSelection()
+      await refreshSkills()
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
 
   return (
     <>
@@ -1406,6 +1495,7 @@ export default function SkillsPanel() {
                   onClick={() => {
                     setSelectedCat(isSelected ? null : cat)
                     setSelectedSkillPath(null)
+                    clearBatchSelection()
                   }}
                   className="flex items-center gap-2 w-full py-1 px-2 text-left transition-colors"
                   style={{
@@ -1445,10 +1535,28 @@ export default function SkillsPanel() {
             ) : (
               <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.selectPrompt')}</div>
             )}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{selectedCountLabel}</span>
+              <button type="button" onClick={selectAllVisible} disabled={!visibleSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.selectAllVisible')}
+              </button>
+              <button type="button" onClick={clearBatchSelection} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.clearSelection')}
+              </button>
+              <button type="button" onClick={() => handleBatchSetEnabled(true)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.batchEnable')}
+              </button>
+              <button type="button" onClick={() => handleBatchSetEnabled(false)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.batchDisable')}
+              </button>
+              <button type="button" onClick={handleBatchDelete} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}>
+                {batchDeleteConfirming ? t('skills.batchConfirmDelete') : t('skills.batchDelete')}
+              </button>
+            </div>
           </div>
           <div className="skill-list-scroll flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
-            {(selectedCat ? catSkills : recentlyMod).map((skill: SkillInfo) => (
-              <div key={skill.path || skill.name} onMouseLeave={() => confirmDeletePath === skill.path && setConfirmDeletePath('')}>
+            {visibleSkills.map((skill: SkillInfo) => (
+              <div key={skill.path || skill.name}>
                 <SkillItem
                   skill={skill}
                   variant={selectedCat ? 'category' : 'recent'}
@@ -1456,13 +1564,11 @@ export default function SkillsPanel() {
                   onSelect={() => setSelectedSkillPath(skill.path)}
                   onToggle={handleToggleSkill}
                   onDelete={handleDeleteSkill}
-                  busy={busySkillPath === skill.path}
+                  selectedForBatch={selectedSkillPaths.includes(skill.path)}
+                  onBatchSelect={toggleSelectSkill}
+                  deleteConfirming={confirmDeletePath === skill.path}
+                  busy={busySkillPath === skill.path || batchBusy}
                 />
-                {confirmDeletePath === skill.path && (
-                  <div className="px-2 py-1 text-[12px]" style={{ color: 'var(--hud-warning)' }}>
-                    {t('skills.confirmDelete')}
-                  </div>
-                )}
               </div>
             ))}
             {selectedCat && catSkills.length === 0 && (
