@@ -134,6 +134,60 @@ def test_skill_translation_remounts_translated_pane_after_completion() -> None:
     assert "key={`${data.path}:${translationTargetLang}:${translationRenderKey}`}" in panel
 
 
+def test_skills_panel_exposes_management_actions_and_editor() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "createSkill" in panel
+    assert "saveSkillContent" in panel
+    assert "deleteSkill" in panel
+    assert "toggleSkillEnabled" in panel
+    assert "SkillCreateModal" in panel
+    assert "isEditing" in panel
+    assert "editorContent" in panel
+    assert "data-skill-editor" in panel
+    assert "fetch('/api/skills'" in panel
+    assert "fetch('/api/skills/detail'" in panel
+    assert "fetch('/api/skills/toggle'" in panel
+    assert "fetch('/api/skills'," in panel
+    assert "skills.newSkill" in panel
+    assert "skills.editSkill" in panel
+    assert "skills.saveSkill" in panel
+    assert "skills.deleteSkill" in panel
+    assert "skills.enableSkill" in panel
+    assert "skills.disableSkill" in panel
+
+
+def test_skills_panel_exposes_zip_import_and_market_install() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "SkillImportModal" in panel
+    assert "SkillMarketModal" in panel
+    assert "selectedZipFile" in panel
+    assert "importSkillsZip" in panel
+    assert "searchSkillMarket" in panel
+    assert "installMarketSkill" in panel
+    assert "fetch(`/api/skills/import-zip?${params.toString()}`" in panel
+    assert "fetch(`/api/skills/market/search?${params.toString()}`" in panel
+    assert "fetch('/api/skills/market/install'" in panel
+    assert "application/zip" in panel
+    assert "skills.importZip" in panel
+    assert "skills.skillMarket" in panel
+    assert "skills.installSkill" in panel
+
+
+def test_skills_page_uses_internal_panel_scrolling() -> None:
+    app = (ROOT / "frontend/src/App.tsx").read_text()
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "activeTab === 'skills'" in app
+    assert "overflow: activeTab === 'skills' ? 'hidden' : 'auto'" in app
+    assert "skills-panel-root" in panel
+    assert "h-full min-h-0" in panel
+    assert "noPadding" in panel
+    assert "overflow-y-auto" in panel
+    assert "skill-list-scroll" in panel
+
+
 def test_skill_translation_shows_translator_model_and_manual_button() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
@@ -148,7 +202,7 @@ def test_skill_translation_shows_translator_model_and_manual_button() -> None:
 def test_skills_panel_handles_missing_skills_payload() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
-    assert "const { data, isLoading, error } = useApi('/skills', 60000)" in panel
+    assert "const { data, isLoading, error, mutate } = useApi<SkillsPayload>('/skills', 60000)" in panel
     assert "if (error && !data)" in panel
     assert "data?.category_counts || {}" in panel
     assert "data?.by_category || {}" in panel
@@ -164,7 +218,7 @@ def test_skills_panel_displays_localized_category_names_and_descriptions() -> No
     assert "skills.category.data-science.label" in panel
     assert "skills.category.data-science.description" in panel
     assert "categoryDisplay.description" in panel
-    assert "title={selectedCategoryDisplay?.label || selectedCat}" in panel
+    assert "selectedCat ? selectedCategoryDisplay?.label || selectedCat : t('dashboard.recentlyModified')" in panel
     assert "{categoryDisplay.label}" in panel
 
 
@@ -188,6 +242,19 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.translationOnly': 'Translation only'" in translations
     assert "'skills.sideBySide': 'Side by Side'" in translations
     assert "'skills.syncCompare': 'Compare reading'" in translations
+    assert "'skills.newSkill': 'New skill'" in translations
+    assert "'skills.editSkill': 'Edit'" in translations
+    assert "'skills.previewSkill': 'Preview'" in translations
+    assert "'skills.saveSkill': 'Save skill'" in translations
+    assert "'skills.deleteSkill': 'Delete'" in translations
+    assert "'skills.enableSkill': 'Enable'" in translations
+    assert "'skills.disableSkill': 'Disable'" in translations
+    assert "'skills.enabled': 'Enabled'" in translations
+    assert "'skills.disabled': 'Disabled'" in translations
+    assert "'skills.importZip': 'Import ZIP'" in translations
+    assert "'skills.skillMarket': 'Skill Market'" in translations
+    assert "'skills.installSkill': 'Install'" in translations
+    assert "'skills.searchMarket': 'Search official skills'" in translations
     assert "'skills.category.data-science.label': 'Data Science'" in translations
     assert "'skills.category.data-science.description': 'Analysis, notebooks, datasets, and data workflows.'" in translations
     assert "'skills.original': '原文'" in translations
@@ -207,5 +274,18 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.translationOnly': '只看译文'" in translations
     assert "'skills.sideBySide': '中英对照'" in translations
     assert "'skills.syncCompare': '对照看'" in translations
+    assert "'skills.newSkill': '新增技能'" in translations
+    assert "'skills.editSkill': '编辑'" in translations
+    assert "'skills.previewSkill': '预览'" in translations
+    assert "'skills.saveSkill': '保存技能'" in translations
+    assert "'skills.deleteSkill': '删除'" in translations
+    assert "'skills.enableSkill': '启用'" in translations
+    assert "'skills.disableSkill': '禁用'" in translations
+    assert "'skills.enabled': '已启用'" in translations
+    assert "'skills.disabled': '已禁用'" in translations
+    assert "'skills.importZip': '导入 ZIP'" in translations
+    assert "'skills.skillMarket': '技能市场'" in translations
+    assert "'skills.installSkill': '安装'" in translations
+    assert "'skills.searchMarket': '搜索官方技能'" in translations
     assert "'skills.category.data-science.label': '数据科学'" in translations
     assert "'skills.category.data-science.description': '数据分析、Notebook、数据集和数据处理流程。'" in translations

@@ -50,6 +50,7 @@ class SkillInfo:
     modified_at: datetime
     file_size: int = 0
     is_custom: bool = False  # heuristic: modified recently and not in a bulk timestamp
+    enabled: bool = True
 
 
 @dataclass

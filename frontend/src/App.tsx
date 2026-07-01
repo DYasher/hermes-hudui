@@ -142,8 +142,11 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className={`hud-workspace overflow-y-auto${activeTab === 'dashboard' ? ' hud-workspace--dashboard' : ''}`} style={{ flex: '1 1 0', height: 0, minHeight: 0 }}>
-          <div className={`grid gap-2 p-2 ${GRID_CLASS[activeTab]}`}>
+        <div
+          className={`hud-workspace${activeTab === 'dashboard' ? ' hud-workspace--dashboard' : ''}`}
+          style={{ flex: '1 1 0', height: 0, minHeight: 0, overflow: activeTab === 'skills' ? 'hidden' : 'auto' }}
+        >
+          <div className={`grid gap-2 p-2 ${GRID_CLASS[activeTab]}${activeTab === 'skills' ? ' h-full min-h-0' : ''}`}>
             <TabContent tab={activeTab} />
           </div>
         </div>

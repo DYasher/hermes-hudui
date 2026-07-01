@@ -20,6 +20,34 @@ type SkillTranslationOptions = {
   providers: SkillTranslationProvider[]
   cache_dir?: string
 }
+type SkillInfo = {
+  name: string
+  category: string
+  description?: string
+  path: string
+  modified_at?: string
+  file_size?: number
+  is_custom?: boolean
+  enabled?: boolean
+}
+type SkillsPayload = {
+  total: number
+  custom_count: number
+  category_counts: Record<string, number>
+  by_category: Record<string, SkillInfo[]>
+  recently_modified: SkillInfo[]
+}
+type SkillDetail = SkillInfo & {
+  content: string
+}
+type SkillMarketItem = {
+  identifier: string
+  name: string
+  description?: string
+  source?: string
+  category?: string
+  version?: string
+}
 
 const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
 const TRANSLATION_MODEL_STORAGE_KEY = 'hud-skill-translation-model'
@@ -150,6 +178,92 @@ function storeValue(key: string, value: string) {
   }
 }
 
+async function readJsonResponse(res: Response) {
+  const payload = await res.json().catch(() => null)
+  if (!res.ok) {
+    const detail = payload?.detail || payload?.message || res.statusText
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+  return payload
+}
+
+async function createSkill(payload: {
+  category: string
+  name: string
+  description: string
+  content: string
+}) {
+  const res = await fetch('/api/skills', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonResponse(res)
+}
+
+async function saveSkillContent(path: string, content: string) {
+  const res = await fetch('/api/skills/detail', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  })
+  return readJsonResponse(res)
+}
+
+async function deleteSkill(path: string) {
+  const res = await fetch('/api/skills', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  return readJsonResponse(res)
+}
+
+async function toggleSkillEnabled(name: string, enabled: boolean) {
+  const res = await fetch('/api/skills/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, enabled }),
+  })
+  return readJsonResponse(res)
+}
+
+async function importSkillsZip(file: File, overwrite: boolean) {
+  const params = new URLSearchParams({
+    filename: file.name,
+    overwrite: String(overwrite),
+  })
+  const res = await fetch(`/api/skills/import-zip?${params.toString()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip' },
+    body: file,
+  })
+  return readJsonResponse(res)
+}
+
+async function searchSkillMarket(query: string, source: string) {
+  const params = new URLSearchParams({
+    q: query,
+    source,
+    limit: '30',
+  })
+  const res = await fetch(`/api/skills/market/search?${params.toString()}`)
+  return readJsonResponse(res)
+}
+
+async function installMarketSkill(identifier: string, category: string, force: boolean) {
+  const res = await fetch('/api/skills/market/install', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier,
+      category: category || undefined,
+      force,
+    }),
+  })
+  return readJsonResponse(res)
+}
+
 const markdownComponents = {
   h1: ({ node: _node, ...props }: any) => <h1 data-skill-sync-node="" data-skill-sync-heading="" {...props} />,
   h2: ({ node: _node, ...props }: any) => <h2 data-skill-sync-node="" data-skill-sync-heading="" {...props} />,
@@ -266,52 +380,91 @@ function SkillItem({
   variant,
   selected,
   onSelect,
+  onToggle,
+  onDelete,
+  busy,
 }: {
-  skill: any
+  skill: SkillInfo
   variant: 'category' | 'recent'
   selected: boolean
   onSelect: () => void
+  onToggle: (skill: SkillInfo) => void
+  onDelete: (skill: SkillInfo) => void
+  busy?: boolean
 }) {
   const { t } = useTranslation()
   const descLimit = variant === 'category' ? 120 : 100
   const categoryDisplay = getSkillCategoryDisplay(skill.category || '', t)
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="block w-full py-2 px-2 text-[13px] text-left cursor-pointer transition-colors"
+    <div
+      className="w-full py-2 px-2 text-[13px] transition-colors"
       style={{
         background: selected ? 'var(--hud-bg-hover)' : 'transparent',
         borderLeft: selected ? '2px solid var(--hud-primary)' : '2px solid var(--hud-border)',
       }}
-      title={t('skills.openDetail')}
     >
-      <div className="flex items-center gap-2 mb-0.5">
-        <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>{skill.name}</span>
-        {variant === 'recent' && (
-          <span className="text-[13px] px-1" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text-dim)' }}>
-            {categoryDisplay.label}
+      <button
+        type="button"
+        onClick={onSelect}
+        className="block w-full text-left cursor-pointer"
+        title={t('skills.openDetail')}
+      >
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>{skill.name}</span>
+          <span
+            className="text-[11px] px-1"
+            style={{
+              background: skill.enabled === false ? 'var(--hud-bg-panel)' : 'var(--hud-primary)',
+              color: skill.enabled === false ? 'var(--hud-warning)' : 'var(--hud-bg-deep)',
+            }}
+          >
+            {skill.enabled === false ? t('skills.disabled') : t('skills.enabled')}
           </span>
-        )}
-        {skill.is_custom && (
-          <span className="text-[13px] px-1" style={{ background: 'var(--hud-accent)', color: 'var(--hud-bg-deep)' }}>{t('dashboard.custom')}</span>
-        )}
-        {variant === 'category' && (
-          <span className="text-[13px] ml-auto" style={{ color: 'var(--hud-text-dim)' }}>
-            {formatSize(skill.file_size)}
-          </span>
-        )}
+          {variant === 'recent' && (
+            <span className="text-[13px] px-1" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text-dim)' }}>
+              {categoryDisplay.label}
+            </span>
+          )}
+          {skill.is_custom && (
+            <span className="text-[13px] px-1" style={{ background: 'var(--hud-accent)', color: 'var(--hud-bg-deep)' }}>{t('dashboard.custom')}</span>
+          )}
+          {variant === 'category' && (
+            <span className="text-[13px] ml-auto" style={{ color: 'var(--hud-text-dim)' }}>
+              {formatSize(skill.file_size || 0)}
+            </span>
+          )}
+        </div>
+        <div style={{ color: 'var(--hud-text-dim)' }}>
+          {skill.description?.slice(0, descLimit)}{skill.description && skill.description.length > descLimit ? '...' : ''}
+        </div>
+        <div className="text-[13px] mt-0.5" style={{ color: 'var(--hud-text-dim)' }}>
+          {variant === 'category'
+            ? `${skill.modified_at ? new Date(skill.modified_at).toLocaleDateString() : ''} · ${skill.path?.split('/').slice(-3).join('/')}`
+            : skill.modified_at ? timeAgo(skill.modified_at) : ''
+          }
+        </div>
+      </button>
+      <div className="mt-2 flex flex-wrap gap-1">
+        <button
+          type="button"
+          onClick={() => onToggle(skill)}
+          disabled={busy}
+          className="px-1.5 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
+          style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
+        >
+          {skill.enabled === false ? t('skills.enableSkill') : t('skills.disableSkill')}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(skill)}
+          disabled={busy}
+          className="px-1.5 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
+          style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}
+        >
+          {t('skills.deleteSkill')}
+        </button>
       </div>
-      <div style={{ color: 'var(--hud-text-dim)' }}>
-        {skill.description?.slice(0, descLimit)}{skill.description?.length > descLimit ? '...' : ''}
-      </div>
-      <div className="text-[13px] mt-0.5" style={{ color: 'var(--hud-text-dim)' }}>
-        {variant === 'category'
-          ? `${skill.modified_at ? new Date(skill.modified_at).toLocaleDateString() : ''} · ${skill.path?.split('/').slice(-3).join('/')}`
-          : skill.modified_at ? timeAgo(skill.modified_at) : ''
-        }
-      </div>
-    </button>
+    </div>
   )
 }
 
@@ -358,10 +511,22 @@ function MarkdownPane({
   )
 }
 
-function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void }) {
+function SkillDetailModal({
+  path,
+  onClose,
+  onChanged,
+}: {
+  path: string
+  onClose: () => void
+  onChanged: () => void
+}) {
   const { t } = useTranslation()
   const [translationMode, setTranslationMode] = useState<TranslationMode>('side-by-side')
   const [syncCompareEnabled, setSyncCompareEnabled] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editorContent, setEditorContent] = useState('')
+  const [editorError, setEditorError] = useState('')
+  const [editorSaving, setEditorSaving] = useState(false)
   const [translation, setTranslation] = useState('')
   const [translationSourceLang, setTranslationSourceLang] = useState('')
   const [translationTargetLang, setTranslationTargetLang] = useState('')
@@ -379,7 +544,7 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
   const originalScrollRef = useRef<HTMLDivElement | null>(null)
   const translationScrollRef = useRef<HTMLDivElement | null>(null)
   const syncingScrollRef = useRef(false)
-  const { data, isLoading, error } = useApi(
+  const { data, isLoading, error, mutate } = useApi<SkillDetail>(
     `/skills/detail?path=${encodeURIComponent(path)}`,
     0,
   )
@@ -438,7 +603,16 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
     setTranslatedByModel('')
     setTranslationCached(false)
     setTranslationRenderKey(current => current + 1)
+    setIsEditing(false)
+    setEditorContent('')
+    setEditorError('')
   }, [path])
+
+  useEffect(() => {
+    if (isCurrentDetail && data?.content && !isEditing) {
+      setEditorContent(data.content)
+    }
+  }, [data?.content, isCurrentDetail, isEditing])
 
   const applyTranslationPayload = (payload: any) => {
     setTranslation(payload.translation || '')
@@ -540,6 +714,40 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
     setTranslationModelApplyTick(current => current + 1)
   }
 
+  const startEditing = () => {
+    setEditorContent(data?.content || '')
+    setEditorError('')
+    setIsEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setEditorContent(data?.content || '')
+    setEditorError('')
+    setIsEditing(false)
+  }
+
+  const saveEditor = async () => {
+    if (!data?.path) return
+    setEditorSaving(true)
+    setEditorError('')
+    try {
+      await saveSkillContent(data.path, editorContent)
+      await mutate()
+      onChanged()
+      setIsEditing(false)
+      setTranslation('')
+      setTranslationError('')
+      setTranslatedByProvider('')
+      setTranslatedByModel('')
+      setTranslationCached(false)
+      setTranslationRenderKey(current => current + 1)
+    } catch (err) {
+      setEditorError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setEditorSaving(false)
+    }
+  }
+
   const showOriginal = translationMode === 'side-by-side' || translationMode === 'original'
   const showTranslation = translationMode === 'side-by-side' || translationMode === 'translation'
   const canSyncCompare = syncCompareEnabled && showOriginal && showTranslation
@@ -635,6 +843,30 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={isEditing ? cancelEditing : startEditing}
+              disabled={!isCurrentDetail || !data}
+              className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+              style={{
+                color: isEditing ? 'var(--hud-bg-deep)' : 'var(--hud-primary)',
+                background: isEditing ? 'var(--hud-warning)' : 'transparent',
+                border: '1px solid var(--hud-border)',
+              }}
+            >
+              {isEditing ? t('skills.previewSkill') : t('skills.editSkill')}
+            </button>
+            {isEditing && (
+              <button
+                type="button"
+                onClick={saveEditor}
+                disabled={editorSaving || !editorContent.trim()}
+                className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+                style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}
+              >
+                {editorSaving ? '...' : t('skills.saveSkill')}
+              </button>
+            )}
             {[
               ['side-by-side', t('skills.sideBySide')],
               ['original', t('skills.originalOnly')],
@@ -669,6 +901,12 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
               {t('skills.syncCompare')}
             </button>
           </div>
+          {editorError && (
+            <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error)' }}>
+              {editorError}
+            </div>
+          )}
+          {!isEditing && (
           <div className="mt-3 grid grid-cols-1 md:grid-cols-[minmax(160px,220px)_minmax(220px,1fr)_auto] gap-2 items-end">
             <label className="text-[11px] uppercase tracking-widest" style={{ color: 'var(--hud-text-dim)' }}>
               <span className="block mb-1">{t('skills.translationProvider')}</span>
@@ -724,6 +962,8 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
               </button>
             </div>
           </div>
+          )}
+          {!isEditing && (
           <div className="mt-2 flex flex-wrap gap-3 text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
             <span>{t('skills.translationCacheNote')}</span>
             {translatorLabel && (
@@ -733,6 +973,7 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
               </span>
             )}
           </div>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 overflow-hidden p-3">
@@ -744,7 +985,16 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
               {t('skills.detailUnavailable')}
             </div>
           )}
-          {!error && isCurrentDetail && data && (
+          {!error && isCurrentDetail && data && isEditing && (
+            <textarea
+              value={editorContent}
+              onChange={event => setEditorContent(event.target.value)}
+              data-skill-editor
+              className="w-full h-full min-h-0 resize-none p-3 font-mono text-[13px] outline-none"
+              style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            />
+          )}
+          {!error && isCurrentDetail && data && !isEditing && (
             <div className={`h-full min-h-0 grid gap-3 ${showOriginal && showTranslation ? 'grid grid-cols-1 lg:grid-cols-2' : 'grid grid-cols-1'}`}>
               {showOriginal && (
                 <MarkdownPane
@@ -772,21 +1022,300 @@ function SkillDetailModal({ path, onClose }: { path: string; onClose: () => void
   )
 }
 
+function SkillCreateModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: (path?: string) => void
+}) {
+  const { t } = useTranslation()
+  const [category, setCategory] = useState('uncategorized')
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [content, setContent] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const result = await createSkill({ category, name, description, content })
+      onCreated(result?.detail?.path || result?.path)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
+      <div className="w-full max-w-3xl max-h-[90vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-bg-surface)', border: '1px solid var(--hud-border)' }}>
+        <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
+          <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.newSkill')}</div>
+          <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
+            x {t('skills.close')}
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+              <span className="block mb-1">{t('skills.category')}</span>
+              <input value={category} onChange={event => setCategory(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            </label>
+            <label className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+              <span className="block mb-1">{t('skills.skillName')}</span>
+              <input value={name} onChange={event => setName(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            </label>
+          </div>
+          <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+            <span className="block mb-1">{t('skills.description')}</span>
+            <input value={description} onChange={event => setDescription(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+          </label>
+          <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+            <span className="block mb-1">SKILL.md</span>
+            <textarea value={content} onChange={event => setContent(event.target.value)} className="w-full h-64 resize-none p-3 font-mono text-[13px] outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+          </label>
+          {error && <div className="text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
+        </div>
+        <div className="shrink-0 px-4 py-3 border-t flex justify-end gap-2" style={{ borderColor: 'var(--hud-border)' }}>
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-[12px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>{t('memory.cancel')}</button>
+          <button type="button" onClick={submit} disabled={busy || !name.trim()} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+            {busy ? '...' : t('skills.saveSkill')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SkillImportModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void
+  onImported: () => void
+}) {
+  const { t } = useTranslation()
+  const [selectedZipFile, setSelectedZipFile] = useState<File | null>(null)
+  const [overwrite, setOverwrite] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<any>(null)
+
+  const submit = async () => {
+    if (!selectedZipFile) return
+    setBusy(true)
+    setError('')
+    try {
+      const payload = await importSkillsZip(selectedZipFile, overwrite)
+      setResult(payload)
+      onImported()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
+      <div className="w-full max-w-2xl max-h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-bg-surface)', border: '1px solid var(--hud-border)' }}>
+        <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
+          <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.importZip')}</div>
+          <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
+            x {t('skills.close')}
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            onChange={event => setSelectedZipFile(event.target.files?.[0] || null)}
+            className="w-full text-[13px]"
+            style={{ color: 'var(--hud-text)' }}
+          />
+          <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
+            <input type="checkbox" checked={overwrite} onChange={event => setOverwrite(event.target.checked)} />
+            {t('skills.overwriteExisting')}
+          </label>
+          {error && <div className="text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
+          {result?.items && (
+            <div className="space-y-1">
+              {result.items.map((item: any) => (
+                <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text-dim)' }}>
+                  <span style={{ color: item.status === 'installed' ? 'var(--hud-primary)' : 'var(--hud-warning)' }}>{item.status}</span>
+                  {' '} {item.category}/{item.name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 px-4 py-3 border-t flex justify-end gap-2" style={{ borderColor: 'var(--hud-border)' }}>
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-[12px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>{t('memory.cancel')}</button>
+          <button type="button" onClick={submit} disabled={busy || !selectedZipFile} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+            {busy ? '...' : t('skills.importZip')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SkillMarketModal({
+  onClose,
+  onInstalled,
+}: {
+  onClose: () => void
+  onInstalled: () => void
+}) {
+  const { t } = useTranslation()
+  const [query, setQuery] = useState('')
+  const [source, setSource] = useState('official')
+  const [category, setCategory] = useState('')
+  const [force, setForce] = useState(false)
+  const [items, setItems] = useState<SkillMarketItem[]>([])
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+
+  const submitSearch = async () => {
+    setBusy('search')
+    setError('')
+    try {
+      const result = await searchSkillMarket(query, source)
+      setItems(result?.items || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const installItem = async (item: SkillMarketItem) => {
+    setBusy(item.identifier)
+    setError('')
+    try {
+      await installMarketSkill(item.identifier, category, force)
+      onInstalled()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
+      <div className="w-full max-w-4xl h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-bg-surface)', border: '1px solid var(--hud-border)' }}>
+        <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
+          <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.skillMarket')}</div>
+          <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
+            x {t('skills.close')}
+          </button>
+        </div>
+        <div className="shrink-0 p-4 border-b" style={{ borderColor: 'var(--hud-border)' }}>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_160px_auto] gap-2">
+            <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('skills.searchMarket')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            <select value={source} onChange={event => setSource(event.target.value)} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
+              {['official', 'all', 'skills-sh', 'github', 'clawhub', 'lobehub', 'browse-sh'].map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+            <input value={category} onChange={event => setCategory(event.target.value)} placeholder={t('skills.category')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            <button type="button" onClick={submitSearch} disabled={busy === 'search'} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+              {busy === 'search' ? '...' : t('skills.search')}
+            </button>
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+            <input type="checkbox" checked={force} onChange={event => setForce(event.target.checked)} />
+            {t('skills.forceInstall')}
+          </label>
+          {error && <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
+          {items.map(item => (
+            <div key={item.identifier} className="p-3 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-bold truncate" style={{ color: 'var(--hud-primary)' }}>{item.name}</div>
+                  <div className="text-[12px] font-mono truncate" style={{ color: 'var(--hud-text-dim)' }}>{item.identifier}</div>
+                  {item.description && <div className="mt-1 text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{item.description}</div>}
+                </div>
+                <button type="button" onClick={() => installItem(item)} disabled={Boolean(busy)} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+                  {busy === item.identifier ? '...' : t('skills.installSkill')}
+                </button>
+              </div>
+            </div>
+          ))}
+          {items.length === 0 && (
+            <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.marketEmpty')}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SkillsPanel() {
   const { t } = useTranslation()
-  const { data, isLoading, error } = useApi('/skills', 60000)
+  const { data, isLoading, error, mutate } = useApi<SkillsPayload>('/skills', 60000)
   const [selectedCat, setSelectedCat] = useState<string | null>(null)
   const [selectedSkillPath, setSelectedSkillPath] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [marketOpen, setMarketOpen] = useState(false)
+  const [busySkillPath, setBusySkillPath] = useState('')
+  const [confirmDeletePath, setConfirmDeletePath] = useState('')
+  const [operationError, setOperationError] = useState('')
+
+  const refreshSkills = useCallback(async () => {
+    await mutate()
+  }, [mutate])
+
+  const handleToggleSkill = async (skill: SkillInfo) => {
+    setBusySkillPath(skill.path)
+    setOperationError('')
+    try {
+      await toggleSkillEnabled(skill.name, skill.enabled === false)
+      await refreshSkills()
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusySkillPath('')
+    }
+  }
+
+  const handleDeleteSkill = async (skill: SkillInfo) => {
+    if (confirmDeletePath !== skill.path) {
+      setConfirmDeletePath(skill.path)
+      return
+    }
+    setBusySkillPath(skill.path)
+    setOperationError('')
+    try {
+      await deleteSkill(skill.path)
+      if (selectedSkillPath === skill.path) setSelectedSkillPath(null)
+      setConfirmDeletePath('')
+      await refreshSkills()
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusySkillPath('')
+    }
+  }
 
   // Only show loading on initial load
   if (isLoading && !data) {
-    return <Panel title={t('skills.title')} className="col-span-full"><div className="glow text-[13px] animate-pulse">{t('skills.scanning')}</div></Panel>
+    return <Panel title={t('skills.title')} className="col-span-full h-full min-h-0" noPadding><div className="p-3 glow text-[13px] animate-pulse">{t('skills.scanning')}</div></Panel>
   }
 
   if (error && !data) {
     return (
-      <Panel title={t('skills.title')} className="col-span-full">
-        <div className="text-[13px]" style={{ color: 'var(--hud-error)' }}>
+      <Panel title={t('skills.title')} className="col-span-full h-full min-h-0" noPadding>
+        <div className="p-3 text-[13px]" style={{ color: 'var(--hud-error)' }}>
           {t('skills.detailUnavailable')}
         </div>
       </Panel>
@@ -794,7 +1323,7 @@ export default function SkillsPanel() {
   }
 
   const catCounts: Record<string, number> = data?.category_counts || {}
-  const byCategory: Record<string, any[]> = data?.by_category || {}
+  const byCategory: Record<string, SkillInfo[]> = data?.by_category || {}
   const recentlyMod = data?.recently_modified || []
 
   // Sort categories by count descending
@@ -811,108 +1340,140 @@ export default function SkillsPanel() {
         <SkillDetailModal
           path={selectedSkillPath}
           onClose={() => setSelectedSkillPath(null)}
+          onChanged={refreshSkills}
+        />
+      )}
+      {createOpen && (
+        <SkillCreateModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={(path) => {
+            if (path) setSelectedSkillPath(path)
+            refreshSkills()
+          }}
+        />
+      )}
+      {importOpen && (
+        <SkillImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={refreshSkills}
+        />
+      )}
+      {marketOpen && (
+        <SkillMarketModal
+          onClose={() => setMarketOpen(false)}
+          onInstalled={refreshSkills}
         />
       )}
 
-      {/* Category overview */}
-      <Panel title={t('dashboard.skillLibrary')} className="col-span-1">
-        <div className="flex gap-2 mb-3">
-          <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-primary)' }}>
-            {data?.total || 0} {t('dashboard.total')}
-          </span>
-          <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-accent)' }}>
-            {data?.custom_count || 0} {t('dashboard.custom')}
-          </span>
-          <span className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
-            {sorted.length} {t('dashboard.categories')}
-          </span>
-        </div>
-
-        {/* Category bar chart — scannable at a glance */}
-        <div className="space-y-1 text-[13px]">
-          {sorted.map(([cat, count]) => {
-            const pct = (count / maxCount) * 100
-            const isSelected = selectedCat === cat
-            const categoryDisplay = getSkillCategoryDisplay(cat, t)
-            return (
-              <button
-                key={cat}
-                onClick={() => {
-                  setSelectedCat(isSelected ? null : cat)
-                  setSelectedSkillPath(null)
-                }}
-                className="flex items-center gap-2 w-full py-1 px-2 text-left transition-colors"
-                style={{
-                  background: isSelected ? 'var(--hud-bg-hover)' : 'transparent',
-                  borderLeft: isSelected ? '2px solid var(--hud-primary)' : '2px solid transparent',
-                }}
-                title={`${categoryDisplay.label} · ${categoryDisplay.description}`}
-              >
-                <span className="w-[160px] min-w-0" style={{ color: isSelected ? 'var(--hud-primary)' : 'var(--hud-text)' }}>
-                  <span className="block truncate">{categoryDisplay.label}</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
-                    {categoryDisplay.description}
-                  </span>
-                </span>
-                <div className="flex-1 h-[6px]" style={{ background: 'var(--hud-bg-panel)' }}>
-                  <div
-                    style={{
-                      width: `${pct}%`,
-                      height: '100%',
-                      background: isSelected ? 'var(--hud-primary)' : 'var(--hud-primary-dim)',
-                    }}
-                  />
-                </div>
-                <span className="tabular-nums w-8 text-right" style={{ color: isSelected ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
-                  {count}
-                </span>
+      <div className="skills-panel-root col-span-full h-full min-h-0 grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2">
+        <Panel title={t('dashboard.skillLibrary')} className="h-full min-h-0" noPadding>
+          <div className="shrink-0 p-3 border-b" style={{ borderColor: 'var(--hud-border)' }}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-primary)' }}>
+                {data?.total || 0} {t('dashboard.total')}
+              </span>
+              <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-accent)' }}>
+                {data?.custom_count || 0} {t('dashboard.custom')}
+              </span>
+              <span className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
+                {sorted.length} {t('dashboard.categories')}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setCreateOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+                + {t('skills.newSkill')}
               </button>
-            )
-          })}
-        </div>
-      </Panel>
-
-      {/* Selected category skills OR recently modified */}
-      {selectedCat ? (
-        <Panel title={selectedCategoryDisplay?.label || selectedCat}>
-          <div className="space-y-2">
-            {selectedCategoryDisplay?.description && (
-              <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
-                {selectedCategoryDisplay.description}
-              </div>
-            )}
-            {catSkills.map((skill: any) => (
-              <SkillItem
-                key={skill.path || skill.name}
-                skill={skill}
-                variant="category"
-                selected={selectedSkillPath === skill.path}
-                onSelect={() => setSelectedSkillPath(skill.path)}
-              />
-            ))}
-            {catSkills.length === 0 && (
-              <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.noSkillsInCategory')}</div>
-            )}
+              <button type="button" onClick={() => setImportOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.importZip')}
+              </button>
+              <button type="button" onClick={() => setMarketOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.skillMarket')}
+              </button>
+              <button type="button" onClick={refreshSkills} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.refresh')}
+              </button>
+            </div>
+            {operationError && <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error)' }}>{operationError}</div>}
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1 text-[13px]">
+            {sorted.map(([cat, count]) => {
+              const pct = (count / maxCount) * 100
+              const isSelected = selectedCat === cat
+              const categoryDisplay = getSkillCategoryDisplay(cat, t)
+              return (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    setSelectedCat(isSelected ? null : cat)
+                    setSelectedSkillPath(null)
+                  }}
+                  className="flex items-center gap-2 w-full py-1 px-2 text-left transition-colors"
+                  style={{
+                    background: isSelected ? 'var(--hud-bg-hover)' : 'transparent',
+                    borderLeft: isSelected ? '2px solid var(--hud-primary)' : '2px solid transparent',
+                  }}
+                  title={`${categoryDisplay.label} · ${categoryDisplay.description}`}
+                >
+                  <span className="w-[160px] min-w-0" style={{ color: isSelected ? 'var(--hud-primary)' : 'var(--hud-text)' }}>
+                    <span className="block truncate">{categoryDisplay.label}</span>
+                    <span className="block truncate text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+                      {categoryDisplay.description}
+                    </span>
+                  </span>
+                  <div className="flex-1 h-[6px]" style={{ background: 'var(--hud-bg-panel)' }}>
+                    <div
+                      style={{
+                        width: `${pct}%`,
+                        height: '100%',
+                        background: isSelected ? 'var(--hud-primary)' : 'var(--hud-primary-dim)',
+                      }}
+                    />
+                  </div>
+                  <span className="tabular-nums w-8 text-right" style={{ color: isSelected ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </Panel>
-      ) : (
-        <Panel title={t('dashboard.recentlyModified')}>
-          <div className="space-y-2">
-            {recentlyMod.map((skill: any) => (
-              <SkillItem
-                key={skill.path || skill.name}
-                skill={skill}
-                variant="recent"
-                selected={selectedSkillPath === skill.path}
-                onSelect={() => setSelectedSkillPath(skill.path)}
-              />
+
+        <Panel title={selectedCat ? selectedCategoryDisplay?.label || selectedCat : t('dashboard.recentlyModified')} className="h-full min-h-0" noPadding>
+          <div className="shrink-0 p-3 border-b" style={{ borderColor: 'var(--hud-border)' }}>
+            {selectedCategoryDisplay?.description ? (
+              <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{selectedCategoryDisplay.description}</div>
+            ) : (
+              <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.selectPrompt')}</div>
+            )}
+          </div>
+          <div className="skill-list-scroll flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
+            {(selectedCat ? catSkills : recentlyMod).map((skill: SkillInfo) => (
+              <div key={skill.path || skill.name} onMouseLeave={() => confirmDeletePath === skill.path && setConfirmDeletePath('')}>
+                <SkillItem
+                  skill={skill}
+                  variant={selectedCat ? 'category' : 'recent'}
+                  selected={selectedSkillPath === skill.path}
+                  onSelect={() => setSelectedSkillPath(skill.path)}
+                  onToggle={handleToggleSkill}
+                  onDelete={handleDeleteSkill}
+                  busy={busySkillPath === skill.path}
+                />
+                {confirmDeletePath === skill.path && (
+                  <div className="px-2 py-1 text-[12px]" style={{ color: 'var(--hud-warning)' }}>
+                    {t('skills.confirmDelete')}
+                  </div>
+                )}
+              </div>
             ))}
-            {recentlyMod.length === 0 && (
+            {selectedCat && catSkills.length === 0 && (
+              <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.noSkillsInCategory')}</div>
+            )}
+            {!selectedCat && recentlyMod.length === 0 && (
               <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.noRecentModifications')}</div>
             )}
           </div>
         </Panel>
-      )}
+      </div>
     </>
   )
 }

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from fastapi import HTTPException
 
 import backend.api.skills as skills_api
 import backend.collectors.skills as skills_collector
+from backend.cache import clear_cache
 from backend.api.skills import get_skill_detail
 
 
@@ -21,6 +24,7 @@ def hermes_home(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
     monkeypatch.delenv("HERMES_HUD_TRANSLATION_CACHE_DIR", raising=False)
+    clear_cache()
     return hermes_home
 
 
@@ -34,6 +38,16 @@ def test_skill_translation_route_is_registered(registered_routes) -> None:
 
 def test_skill_translation_options_route_is_registered(registered_routes) -> None:
     assert ("GET", "/api/skills/translation-options") in registered_routes
+
+
+def test_skill_management_routes_are_registered(registered_routes) -> None:
+    assert ("POST", "/api/skills") in registered_routes
+    assert ("PUT", "/api/skills/detail") in registered_routes
+    assert ("POST", "/api/skills/toggle") in registered_routes
+    assert ("DELETE", "/api/skills") in registered_routes
+    assert ("POST", "/api/skills/import-zip") in registered_routes
+    assert ("GET", "/api/skills/market/search") in registered_routes
+    assert ("POST", "/api/skills/market/install") in registered_routes
 
 
 def test_skill_translation_endpoint_runs_blocking_work_off_event_loop() -> None:
@@ -580,3 +594,234 @@ def test_get_skill_translation_rejects_paths_outside_skills_dir(
         asyncio.run(skills_api.get_skill_translation(request))
 
     assert exc.value.status_code == 404
+
+
+def test_save_skill_content_updates_skill_md_and_rejects_outside_paths(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill_md = hermes_home / "skills" / "core" / "debug-helper" / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text("# Debug Helper\n\nOld content.\n", encoding="utf-8")
+
+    result = skills_manager.save_skill_content(
+        str(skill_md),
+        "# Debug Helper\n\nUpdated content.\n",
+    )
+
+    assert skill_md.read_text(encoding="utf-8") == "# Debug Helper\n\nUpdated content.\n"
+    assert result["detail"]["content"] == "# Debug Helper\n\nUpdated content.\n"
+    backup_path = Path(result["backup_path"])
+    assert backup_path.is_file()
+    assert backup_path.read_text(encoding="utf-8") == "# Debug Helper\n\nOld content.\n"
+    with pytest.raises(ValueError, match="outside"):
+        skills_manager.save_skill_content(
+            str(hermes_home / "outside" / "SKILL.md"),
+            "# Private\n",
+        )
+
+
+def test_create_skill_writes_safe_skill_md_template(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    result = skills_manager.create_skill(
+        category="data-science",
+        name="notebook-helper",
+        description="Help with notebook analysis.",
+        content="",
+    )
+
+    skill_path = hermes_home / "skills" / "data-science" / "notebook-helper" / "SKILL.md"
+    assert result["detail"]["path"] == str(skill_path)
+    text = skill_path.read_text(encoding="utf-8")
+    assert "name: notebook-helper" in text
+    assert "description: Help with notebook analysis." in text
+    assert "# notebook-helper" in text
+
+    with pytest.raises(ValueError, match="safe slug"):
+        skills_manager.create_skill(
+            category="../escape",
+            name="bad",
+            description="bad",
+            content="",
+        )
+
+
+def test_skill_enabled_state_is_collected_from_config_and_can_be_toggled(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill_md = hermes_home / "skills" / "core" / "debug-helper" / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text(
+        "---\nname: debug-helper\ndescription: Debug things\n---\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "config.yaml").write_text(
+        "model:\n  provider: openrouter\nskills:\n  disabled:\n    - debug-helper\n",
+        encoding="utf-8",
+    )
+
+    disabled_state = skills_collector.collect_skills(str(hermes_home))
+    assert disabled_state.skills[0].enabled is False
+
+    enabled = skills_manager.set_skill_enabled("debug-helper", True)
+    assert enabled["enabled"] is True
+    text = (hermes_home / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: openrouter" in text
+    assert "debug-helper" not in text
+
+    clear_cache()
+    enabled_state = skills_collector.collect_skills(str(hermes_home))
+    assert enabled_state.skills[0].enabled is True
+
+    disabled = skills_manager.set_skill_enabled("debug-helper", False)
+    assert disabled["enabled"] is False
+    assert "debug-helper" in (hermes_home / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_delete_skill_moves_skill_directory_to_hud_backup(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    skill_dir = hermes_home / "skills" / "core" / "debug-helper"
+    skill_md = skill_dir / "SKILL.md"
+    skill_dir.mkdir(parents=True)
+    skill_md.write_text("# Debug Helper\n", encoding="utf-8")
+    (skill_dir / "references").mkdir()
+    (skill_dir / "references" / "notes.md").write_text("notes", encoding="utf-8")
+
+    result = skills_manager.delete_skill(str(skill_md))
+
+    assert result["deleted"] is True
+    assert not skill_dir.exists()
+    backup_path = Path(result["backup_path"])
+    assert backup_path.is_dir()
+    assert (backup_path / "SKILL.md").read_text(encoding="utf-8") == "# Debug Helper\n"
+    assert (backup_path / "references" / "notes.md").read_text(encoding="utf-8") == "notes"
+    with pytest.raises(ValueError):
+        backup_path.resolve().relative_to(hermes_home.resolve())
+
+
+def test_import_skills_zip_installs_multiple_skills_and_rejects_zip_slip(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(
+            "bundle/skills/productivity/alpha/SKILL.md",
+            "---\nname: alpha\ndescription: Alpha skill\n---\n# Alpha\n",
+        )
+        zf.writestr(
+            "bundle/skills/research/beta/SKILL.md",
+            "---\nname: beta\ndescription: Beta skill\n---\n# Beta\n",
+        )
+        zf.writestr("bundle/skills/research/beta/references/info.md", "info")
+
+    result = skills_manager.import_skills_zip_bytes(
+        archive.getvalue(),
+        filename="skills.zip",
+    )
+
+    installed = {item["name"]: item for item in result["items"]}
+    assert result["installed_count"] == 2
+    assert installed["alpha"]["category"] == "productivity"
+    assert installed["beta"]["category"] == "research"
+    assert (hermes_home / "skills" / "productivity" / "alpha" / "SKILL.md").is_file()
+    assert (
+        hermes_home
+        / "skills"
+        / "research"
+        / "beta"
+        / "references"
+        / "info.md"
+    ).read_text(encoding="utf-8") == "info"
+
+    malicious = io.BytesIO()
+    with zipfile.ZipFile(malicious, "w") as zf:
+        zf.writestr("../escape/SKILL.md", "# escape")
+    with pytest.raises(ValueError, match="unsafe"):
+        skills_manager.import_skills_zip_bytes(
+            malicious.getvalue(),
+            filename="bad.zip",
+        )
+
+
+def test_skill_market_search_normalizes_hermes_cli_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "results": [
+                        {
+                            "identifier": "official/debug-helper",
+                            "name": "debug-helper",
+                            "description": "Debug helper",
+                            "source": "official",
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(skills_manager.shutil, "which", lambda name: "/usr/bin/hermes")
+    monkeypatch.setattr(skills_manager.subprocess, "run", fake_run)
+
+    result = skills_manager.search_skill_market(
+        "debug",
+        source="official",
+        limit=5,
+    )
+
+    assert captured["cmd"][:4] == ["/usr/bin/hermes", "skills", "search", "--json"]
+    assert "--source" in captured["cmd"]
+    assert captured["cmd"][-1] == "debug"
+    assert result["items"][0]["identifier"] == "official/debug-helper"
+    assert result["items"][0]["name"] == "debug-helper"
+
+
+def test_skill_market_install_runs_hermes_install_and_clears_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="installed", stderr="")
+
+    monkeypatch.setattr(skills_manager.shutil, "which", lambda name: "/usr/bin/hermes")
+    monkeypatch.setattr(skills_manager.subprocess, "run", fake_run)
+
+    result = skills_manager.install_market_skill(
+        "official/debug-helper",
+        category="productivity",
+        force=True,
+    )
+
+    assert captured["cmd"] == [
+        "/usr/bin/hermes",
+        "skills",
+        "install",
+        "official/debug-helper",
+        "--yes",
+        "--category",
+        "productivity",
+        "--force",
+    ]
+    assert result["installed"] is True
+    assert result["identifier"] == "official/debug-helper"
