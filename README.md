@@ -1,8 +1,10 @@
-# ☤ Hermes HUD — Web UI
+# Hermes HUD Web UI（中文二次开发版）
 
-A browser-based consciousness monitor for [Hermes](https://github.com/nousresearch/hermes-agent), the AI agent with persistent memory.
+语言：**中文** | [English](README.en.md)
 
-Same data, same soul, same dashboard that made the [TUI version](https://github.com/joeynyc/hermes-hud) popular — now in your browser.
+Hermes HUD Web UI 是一个运行在浏览器中的 Hermes Agent 监控与管理面板。它读取本机 `~/.hermes/` 数据目录和 `hermes` CLI，展示智能体身份、记忆、技能、会话、定时任务、项目、成本、模型、Gateway、插件、配置档案和实时聊天等状态。
+
+本仓库基于 [Hermes HUD UI](https://github.com/joeynyc/hermes-hudui) 做二次开发，当前重点是让本地 Hermes Agent 更适合中文使用、配置管理和可视化调试。
 
 ![Executive Dashboard](assets/dashboard-executive.png)
 
@@ -12,104 +14,175 @@ Same data, same soul, same dashboard that made the [TUI version](https://github.
 
 ![Plugin Hub](assets/plugin-hub.png)
 
-## Quick Start
+## 快速开始
 
 ```bash
-git clone https://github.com/joeynyc/hermes-hudui.git
 cd hermes-hudui
 ./install.sh
 hermes-hudui
 ```
 
-Open http://localhost:3002
+打开浏览器访问：`http://localhost:3002`
 
-**Requirements:** Python 3.11+, Node.js 18+, a running Hermes agent with data in `~/.hermes/`
+运行要求：
 
-**Verified against Hermes Agent v0.17.0** (state.db schema v16). The HUD reads `~/.hermes/` and the `hermes` CLI directly, so it tracks the agent's on-disk layout. The Health tab's *Agent data layout* and *Agent schema version* checks flag when your agent's data drifts from this baseline.
+- Python 3.11+
+- Node.js 18+
+- 本机已有可运行的 Hermes Agent
+- `~/.hermes/` 中已有 Hermes Agent 数据
 
-On future runs:
+后续再次运行：
+
 ```bash
-source venv/bin/activate && hermes-hudui
+source venv/bin/activate
+hermes-hudui
 ```
 
-## What's Inside
+当前 HUD 按 **Hermes Agent v0.17.0**（`state.db` schema v16）验证。Health 页面会检查 Agent 数据布局和 schema 版本；如果本机 Hermes 的磁盘结构与当前基线不一致，会给出诊断提示。
 
-19 tabs covering everything your agent knows about itself — executive dashboard, identity, memory, skills, sessions, replay, cron jobs, projects, health diagnostics, costs, model analytics, patterns, corrections, sudo governance, live chat, connected OAuth providers, gateway control, plugin management, and live model capabilities.
+## 当前二次开发内容
 
-The Dashboard opens with an executive summary: health, spend pulse, top model, provider/gateway risk, highest-cost session, and action items. Health reacts to filesystem and WebSocket updates, while expensive refresh paths stay throttled.
+### 中文化与本地化
 
-Gateway visibility includes managed-tool routing for web search, image generation, text-to-speech, and browser automation. You can see whether each tool is routed through Nous Tool Gateway, a direct key, or is unavailable. The `Update hermes` action is deliberately two-click and shows last-run logs/status.
+- 全量 UI 支持英文 / 中文切换。
+- 顶栏语言切换会持久化到 `localStorage`。
+- UI 设置为中文时，Chat 会向 Hermes Agent 传递中文回复提示。
+- README 已改为中文，后续文档也会按当前二次开发方向整理。
 
-The Plugin Hub shows installed dashboard and agent plugins, extension entry points, runtime status, required auth commands, and safe enable/disable/update actions.
+### 配置档案管理
 
-Updates in real time via WebSocket. No manual refresh needed.
+Profiles 页面已扩展为完整的 Hermes 配置档案管理界面：
 
-## Hermes Replay
+- 创建新的 profile。
+- 导入 `config.yaml` 和 `SOUL.md`。
+- 编辑模型、provider、base URL、API mode、context length、toolsets、skin、compression 和 soul 内容。
+- 将 profile 设为 Hermes 全局默认 profile，语义等价于 `hermes profile use <name>`。
+- 删除非默认 profile，并带名称确认。
 
-Hermes Replay turns agent runs into redacted, shareable proof artifacts.
+写入路径采用 `fcntl.flock` 加锁和 `tempfile.mkstemp` + `os.replace` 原子替换，避免配置文件被并发写坏。Profile 路径做了名称校验、路径逃逸校验和 symlink 拒绝，避免通过 profile 名称写出 `~/.hermes/profiles/` 边界。
+
+### 外挂记忆
+
+Memory 页面支持查看和切换官方 `memory.provider` 外部记忆配置。内置 `MEMORY.md` / `USER.md` 始终启用，外部 provider 同一时间只能启用一个。当前支持的 provider 包括 Honcho、OpenViking、Mem0、Hindsight、Holographic、RetainDB、ByteRover、Supermemory 和 Memori。
+
+### 主题、背景与界面调优
+
+- 默认主题改为 **Hermes Teal**，接近 Nous / Hermes 官方面板配色。
+- 保留 5 套主题：Neural Awakening、Hermes Teal、Blade Runner、fsociety、Anime。
+- 顶栏主题面板增加自定义背景图设置，支持图片 URL 或 `data:image/...`。
+- 增加自动壁纸模式，当前使用 `https://bing.img.run/rand.php` 获取随机 Bing 图片。
+- 背景层从单个面板移动到 `.hud-workspace`，让底部内容和页面背景保持一致。
+- 新增 wallpaper / glass CSS 变量，主题透明度和玻璃效果集中由 CSS 自定义属性控制。
+- 顶部标签栏支持横向滚动，窗口变窄时仍能访问全部页面。
+
+### Gateway、插件与运行状态
+
+- Gateway 页面展示 Nous Tool Gateway、直接密钥和不可用状态下的工具路由情况。
+- 支持查看 web search、image generation、text-to-speech、browser automation 等 managed tools 的来源。
+- `Update hermes` 操作需要二次确认，并显示最近运行状态、日志路径、日志尾部和退出码。
+- Plugin Hub 展示 dashboard 插件、agent 插件、入口点、运行状态、鉴权命令和安全启用 / 禁用 / 更新操作。
+- Providers 页面展示 OAuth / API key provider 的连接状态、过期状态、scope 和当前活动 provider。
+- Safety 页面汇总运行时安全姿态、写入策略、环境分类和生产路径匹配。
+
+### Hermes Replay
+
+Replay 页面把 Hermes Agent 运行记录导出为可分享的证明材料。
 
 ![Hermes Replay tab](assets/replay-tab.png)
 
-Open the Replay tab, choose a Hermes session, inspect the normalized timeline, review the run receipt, and export static artifacts for sharing or attaching to issues and PRs. The MVP exporter writes local files under `~/.hermes-hud/replays/` and does not upload anything by default.
+当前本地导出内容包括：
 
-Current local exports:
+- 脱敏 JSON replay
+- GitHub 可直接阅读的 Markdown
+- 独立 HTML replay
+- 1200 x 630 PNG 分享卡片
+- fork-safe `fork.json`
 
-- Redacted JSON replay
-- GitHub-ready Markdown
-- Standalone HTML replay
-- 1200 x 630 PNG share card
-- Fork-safe `fork.json`
+Safe Share Mode 是默认导出策略。它会在写出分享材料前脱敏原始工具参数、终端输出、assistant reasoning、类似 token 的值、邮箱、本地路径和其他敏感字段。导出文件包含本机生成的 hash 和 Ed25519 签名，用于证明本地文件完整性，不代表第三方外部认证。
 
-An example sanitized payload is included at [`assets/example-replay.redacted.json`](assets/example-replay.redacted.json).
+远程发布是可选能力。你可以在 Replay 页配置 GitHub Pages 或其他 git 静态站点仓库，然后手动同步公开 gallery。远程同步默认关闭，只有显式点击同步才会推送，且只包含 Safe Share Mode 产物。
 
-Safe Share Mode is the default export posture. It redacts raw tool arguments, terminal output, assistant reasoning, token-like values, emails, local paths, and other sensitive fields before writing share artifacts. Exports include local hashes and Ed25519 signatures generated on this machine; they prove local artifact integrity, not external third-party attestation.
+## 页面概览
 
-### Remote publishing (optional)
+当前面板包含 20 个主要页面：
 
-Locally published replays can be synced to a static host as a public gallery. In the Replay tab's Remote Publishing panel, configure a git repository (`owner/name` for GitHub Pages, or any git URL) and a branch, then press Sync now. The sync builds a static site from your published replays — public replays are listed on the gallery index; unlisted replays are reachable only through an unguessable hash path — and pushes it with your normal git credentials. Remote publishing is off by default, sync only happens when you trigger it, and only Safe-Share-Mode artifacts are ever included; local filesystem paths and publish manifests never leave the machine.
+- Dashboard：健康、成本、模型、provider / gateway 风险和行动项总览。
+- Memory：查看和编辑 Hermes memory / user memory。
+- Skills：查看已安装技能。
+- Sessions：搜索和检查 Hermes 会话。
+- Replay：导出脱敏运行证明材料。
+- Cron：查看和管理定时任务。
+- Projects：查看项目活动、分支和语言信息。
+- Health：检查文件系统、schema、数据布局和 Agent 兼容性。
+- Agents：查看 Agent 运行相关状态。
+- Chat：在 HUD 内与 Hermes Agent 实时对话。
+- Profiles：创建、导入、编辑、切换为 Hermes 全局默认 profile，以及删除 profile。
+- Token Costs：查看 token 和成本统计。
+- Corrections：查看纠错记录。
+- Patterns：查看行为模式和活动趋势。
+- Sudo：查看 sudo / 权限相关治理信息。
+- Providers：查看 OAuth 和 API key provider。
+- Gateway：查看 Gateway 状态和 managed tools。
+- Model Info：查看模型使用与会话分析。
+- Plugins：查看和管理 dashboard / agent 插件。
+- Safety：查看运行时安全姿态。
 
-## Language Support
+数据通过 WebSocket 实时更新，正常使用时不需要手动刷新页面。
 
-English (default) and Chinese. Click the language toggle at the far right of the header bar to switch. The choice persists to localStorage. When set to Chinese, chat responses from your agent also come back in Chinese.
+## 开发调试
 
-## Themes
+后端开发模式：
 
-Five themes switchable with `t`: **Neural Awakening** (cyan), **Hermes Teal** (official Nous dashboard palette), **Blade Runner** (amber), **fsociety** (green), **Anime** (purple). Optional CRT scanlines.
+```bash
+hermes-hudui --dev
+```
 
-The top tab bar is responsive: resize the browser and tabs stay reachable through horizontal scrolling, with the active tab kept in view.
+前端开发模式：
 
-## Keyboard Shortcuts
+```bash
+cd frontend
+npm run dev
+```
 
-| Key | Action |
-|-----|--------|
-| `1`–`9`, `0` | Switch tabs |
-| `t` | Theme picker |
-| `Ctrl+K` | Command palette |
+前端开发服务器默认运行在 `http://localhost:5173`，并将 `/api/*` 代理到 `http://localhost:3002`。
 
-## Relationship to the TUI
+常用验证命令：
 
-This is the browser companion to [hermes-hud](https://github.com/joeynyc/hermes-hud). Both read from the same `~/.hermes/` data directory independently — use either one, or both at the same time.
+```bash
+pytest
+cd frontend && npm run build
+```
 
-The Web UI is fully standalone and adds features the TUI doesn't have: dedicated Memory, Skills, Sessions, Replay, Health, Providers, Gateway, Model, and Plugins tabs; per-model token and cost analytics; gateway managed-tool visibility; actionable diagnostics; command palette; live chat; theme switcher.
+## 键盘快捷键
 
-If you also have the TUI installed, you can enable it with `pip install 'hermes-hudui[tui]'`.
+| 按键 | 操作 |
+|------|------|
+| `1`–`9`、`0` | 切换主要标签页 |
+| `t` | 打开主题选择器 |
+| `Ctrl+K` | 打开命令面板 |
 
-(Quotes around `'hermes-hudui[tui]'` are required in zsh, where the unquoted `[tui]` is interpreted as a glob pattern. Bash and fish accept the unquoted form, but the quoted form is safe everywhere.)
+## 安全边界
 
-## Platform Support
+Hermes HUD UI 默认按本机可信工具设计，请只在本机或受信任网络中使用。Profiles、Memory、Cron、Gateway 等页面包含写入配置、启动命令或调用 `hermes` CLI 的能力；如果把服务暴露到公网或不受信任网络，应把这些接口视为高风险管理接口。
+
+Profile 写入和删除已经做了路径校验、symlink 拒绝、并发锁和原子写入，但它仍然会修改本机 `~/.hermes/` 下的真实配置。执行写操作前请确认当前 Hermes home 指向的是你希望管理的实例。
+
+## 与 TUI 的关系
+
+Hermes HUD Web UI 是 [hermes-hud](https://github.com/joeynyc/hermes-hud) 的浏览器伴侣。两者都独立读取同一个 `~/.hermes/` 数据目录，可以只使用其中一个，也可以同时使用。
+
+如需同时安装 TUI：
+
+```bash
+pip install 'hermes-hudui[tui]'
+```
+
+在 zsh 中需要保留引号，避免 `[tui]` 被当作 glob 解析。
+
+## 平台支持
 
 macOS · Linux · WSL
 
-## License
+## 许可证
 
-MIT — see [LICENSE](LICENSE).
-
----
-
-<a href="https://www.star-history.com/?repos=joeynyc%2Fhermes-hudui&type=date&logscale=&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=joeynyc/hermes-hudui&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=joeynyc/hermes-hudui&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=joeynyc/hermes-hudui&type=date&legend=top-left" />
- </picture>
-</a>
+MIT，详见 [LICENSE](LICENSE)。
