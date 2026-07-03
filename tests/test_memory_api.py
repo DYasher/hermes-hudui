@@ -521,6 +521,25 @@ def test_memory_provider_payload_includes_provider_groups(hermes_home: Path) -> 
     assert status["providers"]["memos"]["group"] == "community"
 
 
+def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home: Path) -> None:
+    status = get_memory_providers()
+    cognee = status["providers"]["cognee"]
+    modes = {mode["id"]: mode for mode in cognee["config_modes"]}
+    fields = {field["name"]: field for field in cognee["config_fields"]}
+
+    assert cognee["label"] == "Cognee"
+    assert cognee["group"] == "community"
+    assert cognee["storage"] == "local/docker/mcp"
+    assert set(modes) == {"python_cli", "docker_api", "mcp_http"}
+    assert modes["python_cli"]["required_fields"] == ["LLM_API_KEY"]
+    assert modes["docker_api"]["required_fields"] == ["COGNEE_API_URL"]
+    assert modes["mcp_http"]["required_fields"] == ["COGNEE_MCP_URL"]
+    assert fields["LLM_API_KEY"]["secret"] is True
+    assert fields["COGNEE_API_URL"]["mode_ids"] == ["docker_api"]
+    assert fields["COGNEE_MCP_URL"]["mode_ids"] == ["mcp_http"]
+    assert cognee["capabilities"]["external_read_mode"] == "provider_summary"
+
+
 def test_memory_provider_status_reads_config(hermes_home: Path) -> None:
     _config_file(hermes_home).write_text(
         "memory:\n  provider: holographic\n  memory_char_limit: 3000\n",
@@ -877,6 +896,17 @@ def test_external_view_for_cloud_provider_is_explicitly_unavailable(hermes_home:
     assert result["available"] is False
     assert result["readonly"] is True
     assert result["reason"] == "provider_specific_api_not_configured"
+    assert result["items"] == []
+
+
+def test_external_view_for_cognee_is_summary_only(hermes_home: Path) -> None:
+    result = get_memory_provider_external_view("cognee")
+
+    assert result["provider"] == "cognee"
+    assert result["available"] is True
+    assert result["readonly"] is True
+    assert result["reason"] == "summary_only"
+    assert result["summary"] == {"total": 0, "categories": {"configured": 0}}
     assert result["items"] == []
 
 

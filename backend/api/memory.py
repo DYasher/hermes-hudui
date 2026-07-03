@@ -530,15 +530,80 @@ MEMORY_PROVIDER_OPTIONS = {
     "cognee": {
         "label": "Cognee",
         "storage": "local/docker/mcp",
-        "dependencies": [],
-        "required_fields": ["COGNEE_CONFIGURATION_PENDING"],
-        "config_files": [],
-        "fields": [],
-        "modes": [],
-        "setup_command": "uv pip install cognee",
+        "dependencies": [
+            {"kind": "python", "name": "cognee"},
+            {"kind": "command", "name": "cognee-cli"},
+        ],
+        "required_fields": [],
+        "config_files": [".env", "cognee.json"],
+        "fields": [
+            {
+                "name": "LLM_API_KEY",
+                "label": "LLM API key",
+                "storage": "env",
+                "secret": True,
+                "help": "Required for local Cognee Python/CLI memory pipelines.",
+            },
+            {
+                "name": "COGNEE_API_URL",
+                "label": "API URL",
+                "storage": "env",
+                "secret": False,
+                "help": "Cognee API server URL, for example http://localhost:8000.",
+            },
+            {
+                "name": "COGNEE_MCP_URL",
+                "label": "MCP URL",
+                "storage": "env",
+                "secret": False,
+                "help": "Cognee MCP HTTP/SSE endpoint, for example http://localhost:8001.",
+            },
+            {
+                "name": "COGNEE_DATASET",
+                "label": "Dataset",
+                "storage": "json",
+                "path": "cognee.json",
+                "secret": False,
+                "help": "Dataset name used for Hermes memory.",
+            },
+        ],
+        "modes": [
+            {
+                "id": "python_cli",
+                "label": "Python / CLI",
+                "storage": "local",
+                "description": "Local Cognee package and cognee-cli.",
+                "fields": ["LLM_API_KEY", "COGNEE_DATASET"],
+                "required_fields": ["LLM_API_KEY"],
+                "required_any": [],
+                "optional_fields": ["COGNEE_DATASET"],
+            },
+            {
+                "id": "docker_api",
+                "label": "Docker API",
+                "storage": "self-hosted",
+                "description": "Cognee API server, usually exposed on localhost:8000.",
+                "fields": ["COGNEE_API_URL", "COGNEE_DATASET"],
+                "required_fields": ["COGNEE_API_URL"],
+                "required_any": [],
+                "optional_fields": ["COGNEE_DATASET"],
+            },
+            {
+                "id": "mcp_http",
+                "label": "MCP HTTP",
+                "storage": "mcp",
+                "description": "Cognee MCP server, usually exposed on localhost:8001.",
+                "fields": ["COGNEE_MCP_URL", "COGNEE_DATASET"],
+                "required_fields": ["COGNEE_MCP_URL"],
+                "required_any": [],
+                "optional_fields": ["COGNEE_DATASET"],
+            },
+        ],
+        "setup_command": "uv pip install cognee && cognee-cli -ui",
         "config_command": "hermes config set memory.provider cognee",
         "notes": [
-            "Community provider metadata is pending detailed configuration support.",
+            "Docker API commonly uses port 8000.",
+            "MCP server commonly uses port 8001.",
         ],
     },
     "agentmemory": {
@@ -679,6 +744,18 @@ MEMORY_PROVIDER_CAPABILITIES = {
         "supports_session_ingest": True,
         "supports_manual_write": False,
         "hooks": ["tools"],
+    },
+    "cognee": {
+        "external_read": True,
+        "external_read_mode": "provider_summary",
+        "direct_hud_config": True,
+        "requires_network": False,
+        "local_storage": True,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": True,
+        "supports_manual_write": True,
+        "hooks": ["mcp", "tools", "session_ingest"],
     },
 }
 
@@ -1204,6 +1281,14 @@ def _provider_external_view_info(provider: str) -> dict:
             "endpoint": "/api/memory/providers/holographic/external",
             "view_type": "facts",
             "reason": "",
+        }
+    if _provider_capabilities(provider).get("external_read_mode") == "provider_summary":
+        return {
+            "available": True,
+            "readonly": True,
+            "endpoint": f"/api/memory/providers/{provider}/external",
+            "view_type": "summary",
+            "reason": "summary_only",
         }
     return {
         "available": False,
@@ -1750,6 +1835,26 @@ def _holographic_external_view(limit: int = 100) -> dict:
     }
 
 
+def _provider_summary_external_view(provider: str) -> dict:
+    info = MEMORY_PROVIDER_OPTIONS[provider]
+    values = _provider_config_values(provider)
+    current_mode = _current_config_mode(info, values)
+    configured, _missing_fields, _missing_any = _required_state_for_mode(
+        info,
+        values,
+        current_mode,
+    )
+    configured_count = 1 if configured else 0
+    return {
+        "provider": provider,
+        "available": True,
+        "readonly": True,
+        "reason": "summary_only",
+        "summary": {"total": configured_count, "categories": {"configured": configured_count}},
+        "items": [],
+    }
+
+
 @router.get("/memory/providers/{provider}/external")
 def get_memory_provider_external_view(provider: str):
     """Read provider-specific external memory data when the HUD can do so safely."""
@@ -1758,6 +1863,8 @@ def get_memory_provider_external_view(provider: str):
         raise HTTPException(400, "unknown memory provider")
     if provider == "holographic":
         return _holographic_external_view()
+    if _provider_capabilities(provider).get("external_read_mode") == "provider_summary":
+        return _provider_summary_external_view(provider)
     return {
         "provider": provider,
         "available": False,
