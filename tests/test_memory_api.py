@@ -554,6 +554,21 @@ def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: 
     assert provider["capabilities"]["external_read_mode"] == "provider_summary"
 
 
+def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_home: Path) -> None:
+    status = get_memory_providers()
+    provider = status["providers"]["memos"]
+    modes = {mode["id"]: mode for mode in provider["config_modes"]}
+    fields = {field["name"]: field for field in provider["config_fields"]}
+
+    assert provider["label"] == "MemOS"
+    assert provider["group"] == "community"
+    assert modes["cloud"]["required_fields"] == ["MEMOS_API_KEY"]
+    assert modes["self_hosted"]["required_fields"] == ["MEMOS_BASE_URL"]
+    assert fields["MEMOS_API_KEY"]["secret"] is True
+    assert "MOS_CHAT_MODEL_PROVIDER" in fields
+    assert provider["capabilities"]["external_read_mode"] == "provider_summary"
+
+
 def test_memory_provider_status_reads_config(hermes_home: Path) -> None:
     _config_file(hermes_home).write_text(
         "memory:\n  provider: holographic\n  memory_char_limit: 3000\n",
