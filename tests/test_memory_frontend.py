@@ -99,7 +99,7 @@ def test_memory_panel_renders_provider_capability_matrix_and_schema_source() -> 
     assert "capabilities: MemoryProviderCapabilities" in panel
     assert "schema_source: MemoryProviderSchemaSource" in panel
     assert "CapabilityMatrix" in panel
-    assert "detailProvider.capabilities" in panel
+    assert "provider.capabilities" in panel
     assert "external_read_mode" in panel
     assert "direct_hud_config" in panel
     assert "requires_network" in panel
@@ -139,6 +139,64 @@ def test_memory_panel_renders_provider_specific_external_memory_view() -> None:
     assert "'memory.externalTrust'" in translations
 
 
+def test_memory_panel_uses_external_memory_console_tabs() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
+
+    assert "type MemoryProviderConsoleTab" in panel
+    assert "providerConsoleTabs" in panel
+    assert "activeProviderTab" in panel
+    assert "ProviderOverviewTab" in panel
+    assert "ProviderConfigTab" in panel
+    assert "ProviderDiagnosticsTab" in panel
+    assert "ProviderExternalDataTab" in panel
+    assert "ProviderInstallGuideTab" in panel
+    assert "memory.providerOverview" in panel
+    assert "memory.providerDiagnostics" in panel
+    assert "memory.installGuide" in panel
+    assert "'memory.providerOverview'" in translations
+    assert "'memory.providerDiagnostics'" in translations
+    assert "'memory.installGuide'" in translations
+
+
+def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_strip() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
+
+    assert "ProviderPicker" in panel
+    assert "providerGroups" in panel
+    assert "<select" in panel
+    assert "<optgroup" in panel
+    assert "memory.officialProviders" in panel
+    assert "memory.communityProviders" in panel
+    assert "memory.providerConfiguredSuffix" in panel
+    assert "providers.map(provider => {" not in panel
+    assert "'memory.officialProviders'" in translations
+    assert "'memory.communityProviders'" in translations
+    assert "'memory.providerConfiguredSuffix'" in translations
+
+
+def test_memory_panel_moves_diagnostics_and_external_view_out_of_default_flow() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+
+    overview_block = panel.split("function ProviderOverviewTab", 1)[1].split("function ProviderConfigTab", 1)[0]
+    config_block = panel.split("function ProviderConfigTab", 1)[1].split("function ProviderDiagnosticsTab", 1)[0]
+    diagnostics_block = panel.split("function ProviderDiagnosticsTab", 1)[1].split("function ProviderExternalDataTab", 1)[0]
+    external_block = panel.split("function ProviderExternalDataTab", 1)[1].split("function ProviderInstallGuideTab", 1)[0]
+
+    assert "ProviderStatusCards" in overview_block
+    assert "CapabilitySummary" in overview_block
+    assert "CapabilityMatrix" not in overview_block
+    assert "ExternalMemoryViewPanel" not in overview_block
+    assert "statusOutput" not in overview_block
+    assert "minimumConfigFields" not in config_block
+    assert "CapabilityMatrix" in diagnostics_block
+    assert "activeHealth" in diagnostics_block
+    assert "statusOutput" in diagnostics_block
+    assert "ExternalMemoryViewPanel" not in diagnostics_block
+    assert "ExternalMemoryViewPanel" in external_block
+
+
 def test_memory_panel_renders_mode_specific_provider_config_form() -> None:
     panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
     translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
@@ -148,13 +206,11 @@ def test_memory_panel_renders_mode_specific_provider_config_form() -> None:
     assert "selectedModes" in panel
     assert "activeMode" in panel
     assert "visibleConfigFields" in panel
-    assert "minimumConfigFields" in panel
+    assert "ProviderConfigTab" in panel
     assert "mode_ids" in panel
     assert "mode: selectedMode" in panel
     assert "memory.configMode" in panel
-    assert "memory.minimumConfig" in panel
     assert "'memory.configMode'" in translations
-    assert "'memory.minimumConfig'" in translations
 
 
 def test_memory_panel_blocks_save_until_required_provider_fields_are_present() -> None:
@@ -164,7 +220,7 @@ def test_memory_panel_blocks_save_until_required_provider_fields_are_present() -
     assert "validateRequiredConfig" in panel
     assert "requiredConfigIssues" in panel
     assert "memory.requiredConfigMissing" in panel
-    assert "disabled={busy || !detailProvider || !detailProvider.config_fields?.length || !!requiredConfigIssues.length}" in panel
+    assert "disabled={busy || !provider.config_fields?.length || !!requiredConfigIssues.length}" in panel
     assert "'memory.requiredConfigMissing'" in translations
 
 
@@ -175,7 +231,8 @@ def test_memory_panel_opens_status_modal_from_output_box_without_extra_button() 
     assert "statusModalOpen" in panel
     assert "memory.openStatusModal" not in panel
     assert "'memory.openStatusModal'" not in translations
-    assert "onClick={() => setStatusModalOpen(true)}" in panel
+    assert "onOpenStatusModal={() => setStatusModalOpen(true)}" in panel
+    assert "onClick={onOpenStatusModal}" in panel
     assert "role=\"button\"" in panel
     assert "tabIndex={0}" in panel
     assert "memory.closeStatusModal" in panel

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useApi } from '../hooks/useApi'
 import Panel, { CapacityBar } from './Panel'
-import { useTranslation } from '../i18n'
+import { useTranslation, type TranslationKey } from '../i18n'
 
 interface MemoryStatusCommand {
   ok: boolean
@@ -1482,6 +1482,601 @@ function ExternalMemoryViewPanel({
   )
 }
 
+type MemoryProviderConfigField = MemoryProviderInfo['config_fields'][number]
+type MemoryProviderConsoleTab = 'overview' | 'config' | 'diagnostics' | 'external' | 'install'
+
+const communityProviderIds = new Set(['cognee', 'agentmemory', 'memos'])
+const providerConsoleTabs: Array<{ id: MemoryProviderConsoleTab; labelKey: TranslationKey }> = [
+  { id: 'overview', labelKey: 'memory.providerOverview' },
+  { id: 'config', labelKey: 'memory.configureProvider' },
+  { id: 'diagnostics', labelKey: 'memory.providerDiagnostics' },
+  { id: 'external', labelKey: 'memory.externalView' },
+  { id: 'install', labelKey: 'memory.installGuide' },
+]
+
+function providerGroups(providers: MemoryProviderInfo[]): Array<{ id: string; labelKey: TranslationKey; providers: MemoryProviderInfo[] }> {
+  const groups: Array<{ id: string; labelKey: TranslationKey; providers: MemoryProviderInfo[] }> = [
+    {
+      id: 'official',
+      labelKey: 'memory.officialProviders',
+      providers: providers.filter(provider => !communityProviderIds.has(provider.id)),
+    },
+    {
+      id: 'community',
+      labelKey: 'memory.communityProviders',
+      providers: providers.filter(provider => communityProviderIds.has(provider.id)),
+    },
+  ]
+  return groups.filter(group => group.providers.length)
+}
+
+function ProviderPicker({
+  providers,
+  selectedId,
+  activeId,
+  busy,
+  onSelect,
+  readinessText,
+}: {
+  providers: MemoryProviderInfo[]
+  selectedId: string
+  activeId: string
+  busy: boolean
+  onSelect: (provider: string) => void
+  readinessText: (provider?: MemoryProviderInfo) => string
+}) {
+  const { t } = useTranslation()
+  const groups = providerGroups(providers)
+
+  return (
+    <label className="block">
+      <span className="uppercase tracking-wider text-[10px] mb-1 block" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.selectProvider')}
+      </span>
+      <select
+        value={selectedId}
+        onChange={event => onSelect(event.target.value)}
+        disabled={busy || !providers.length}
+        className="w-full text-[12px] px-2 py-1.5 outline-none"
+        style={{
+          background: 'var(--hud-bg-deep)',
+          border: '1px solid var(--hud-border)',
+          color: 'var(--hud-text)',
+        }}
+      >
+        {!providers.length && <option value="">{t('memory.notConfigured')}</option>}
+        {groups.map(group => (
+          <optgroup key={group.id} label={t(group.labelKey)}>
+            {group.providers.map(item => {
+              const status = item.id === activeId
+                ? t('memory.activeProvider')
+                : item.configured ? t('memory.providerConfiguredSuffix') : readinessText(item)
+              return (
+                <option key={item.id} value={item.id}>
+                  {item.label} - {status}
+                </option>
+              )
+            })}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function ProviderStatusCards({
+  provider,
+  activeHealth,
+  readinessText,
+  healthColor,
+  healthText,
+}: {
+  provider?: MemoryProviderInfo
+  activeHealth?: MemoryProviderHealth | null
+  readinessText: (provider?: MemoryProviderInfo) => string
+  healthColor: (ok: boolean | null | undefined) => string
+  healthText: (ok: boolean | null | undefined) => string
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalProvider')}</div>
+        <div className="text-[12px]" style={{ color: provider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
+          {provider?.label || t('memory.noneExternal')}
+        </div>
+      </div>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.configured')}</div>
+        <div className="text-[12px]" style={{ color: provider?.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
+          {readinessText(provider)}
+        </div>
+      </div>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthDependencies')}</div>
+        <div className="text-[12px]" style={{ color: healthColor(activeHealth?.dependencies.ok) }}>
+          {healthText(activeHealth?.dependencies.ok)}
+        </div>
+      </div>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
+        <div className="text-[12px]" style={{ color: activeHealth?.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
+          {activeHealth?.active ? t('memory.activeState') : t('memory.inactiveState')}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CapabilitySummary({ capabilities }: { capabilities?: MemoryProviderCapabilities }) {
+  const { t } = useTranslation()
+  const enabled = [
+    capabilities?.supports_auto_recall && t('memory.autoRecall'),
+    capabilities?.supports_session_ingest && t('memory.sessionIngest'),
+    capabilities?.supports_tools && t('memory.tools'),
+    capabilities?.external_read && t('memory.externalRead'),
+    capabilities?.supports_manual_write && t('memory.manualWrite'),
+  ].filter(Boolean)
+
+  return (
+    <div>
+      <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.capabilitySummary')}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {enabled.length ? enabled.map(item => (
+          <span
+            key={String(item)}
+            className="text-[11px] px-1.5 py-0.5"
+            style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-primary)' }}
+          >
+            {item}
+          </span>
+        )) : (
+          <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.no')}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProviderOverviewTab({
+  provider,
+  activeProvider,
+  activeHealth,
+  statusCommand,
+  busy,
+  readinessText,
+  healthColor,
+  healthText,
+  onCheck,
+  onEnable,
+  onDisable,
+}: {
+  provider?: MemoryProviderInfo
+  activeProvider?: MemoryProviderInfo
+  activeHealth?: MemoryProviderHealth | null
+  statusCommand: string
+  busy: boolean
+  readinessText: (provider?: MemoryProviderInfo) => string
+  healthColor: (ok: boolean | null | undefined) => string
+  healthText: (ok: boolean | null | undefined) => string
+  onCheck: () => void
+  onEnable: () => void
+  onDisable: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-3">
+      <ProviderStatusCards
+        provider={provider}
+        activeHealth={activeHealth}
+        readinessText={readinessText}
+        healthColor={healthColor}
+        healthText={healthText}
+      />
+      <CapabilitySummary capabilities={provider?.capabilities} />
+      <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.oneExternalOnly')}
+      </div>
+      <div className="font-mono text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+        {provider?.config_command || statusCommand}
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        {!!activeProvider && (
+          <button
+            onClick={onDisable}
+            disabled={busy}
+            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.turnOffExternal')}
+          </button>
+        )}
+        <button
+          onClick={onCheck}
+          disabled={busy || !provider}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {busy ? '...' : t('memory.checkStatus')}
+        </button>
+        <button
+          onClick={onEnable}
+          disabled={busy || !provider || provider.active}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+          type="button"
+        >
+          {busy ? '...' : provider?.active ? t('memory.activeProvider') : t('memory.setProvider')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ProviderConfigTab({
+  provider,
+  activeMode,
+  selectedMode,
+  visibleConfigFields,
+  configDraft,
+  requiredConfigIssues,
+  busy,
+  onModeSelect,
+  onDraftChange,
+  onSave,
+  fieldIsRequired,
+}: {
+  provider: MemoryProviderInfo
+  activeMode?: MemoryProviderConfigMode
+  selectedMode: string
+  visibleConfigFields: MemoryProviderConfigField[]
+  configDraft: Record<string, string>
+  requiredConfigIssues: string[]
+  busy: boolean
+  onModeSelect: (mode: string) => void
+  onDraftChange: (field: string, value: string) => void
+  onSave: () => void
+  fieldIsRequired: (field: MemoryProviderConfigField) => boolean
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-3">
+      {!!provider.config_modes?.length && (
+        <div>
+          <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.configMode')}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {provider.config_modes.map(mode => {
+              const selectedConfigMode = selectedMode === mode.id
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => onModeSelect(mode.id)}
+                  disabled={busy}
+                  className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+                  style={{
+                    background: selectedConfigMode ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
+                    color: selectedConfigMode ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
+                    border: '1px solid var(--hud-border)',
+                  }}
+                  type="button"
+                  title={mode.description || mode.storage}
+                >
+                  {mode.label}
+                </button>
+              )
+            })}
+          </div>
+          {!!activeMode?.description && (
+            <div className="text-[11px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
+              {activeMode.description}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.configureProvider')}
+        </div>
+        {visibleConfigFields.length ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {visibleConfigFields.map(field => {
+              const current = provider.config_values?.[field.name]
+              return (
+                <label key={field.name} className="block">
+                  <span className="flex flex-wrap items-center gap-1.5 text-[11px] mb-1">
+                    <span style={{ color: 'var(--hud-text-dim)' }}>
+                      {field.label}
+                      {fieldIsRequired(field) && (
+                        <span style={{ color: 'var(--hud-error, #f44)' }}> {t('memory.requiredMarker')}</span>
+                      )}
+                    </span>
+                    {field.secret && current?.configured && (
+                      <span style={{ color: 'var(--hud-success)' }}>{t('memory.secretConfigured')}</span>
+                    )}
+                  </span>
+                  <input
+                    value={configDraft[field.name] ?? ''}
+                    type={field.secret ? 'password' : 'text'}
+                    onChange={event => onDraftChange(field.name, event.target.value)}
+                    placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
+                    className="w-full text-[12px] px-2 py-1.5 outline-none"
+                    style={{
+                      background: 'var(--hud-bg-deep)',
+                      border: '1px solid var(--hud-border)',
+                      color: 'var(--hud-text)',
+                    }}
+                  />
+                  <span className="block text-[10px] mt-0.5 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+                    {current?.source || field.path || field.storage}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.noConfigFields')}
+          </div>
+        )}
+      </div>
+
+      {!!requiredConfigIssues.length && (
+        <div className="text-[12px]" style={{ color: 'var(--hud-error, #f44)' }}>
+          {t('memory.requiredConfigMissing')}: {requiredConfigIssues.join(', ')}
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          onClick={onSave}
+          disabled={busy || !provider.config_fields?.length || !!requiredConfigIssues.length}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {busy ? '...' : t('memory.saveProviderConfig')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ProviderDiagnosticsTab({
+  provider,
+  activeHealth,
+  statusResult,
+  statusOutput,
+  busy,
+  checkedAtText,
+  healthColor,
+  healthText,
+  onCheck,
+  onOpenStatusModal,
+}: {
+  provider: MemoryProviderInfo
+  activeHealth?: MemoryProviderHealth | null
+  statusResult: MemoryProviderCheckResult | null
+  statusOutput: string
+  busy: boolean
+  checkedAtText: (value?: string) => string
+  healthColor: (ok: boolean | null | undefined) => string
+  healthText: (ok: boolean | null | undefined) => string
+  onCheck: () => void
+  onOpenStatusModal: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-3">
+      <CapabilityMatrix
+        capabilities={provider.capabilities}
+        schemaSource={provider.schema_source}
+      />
+
+      {activeHealth && (
+        <div>
+          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.healthChecks')}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthConfig')}</div>
+              <div className="text-[12px]" style={{ color: healthColor(activeHealth.required_config.ok) }}>
+                {healthText(activeHealth.required_config.ok)}
+              </div>
+            </div>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthDependencies')}</div>
+              <div className="text-[12px]" style={{ color: healthColor(activeHealth.dependencies.ok) }}>
+                {healthText(activeHealth.dependencies.ok)}
+              </div>
+            </div>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
+              <div className="text-[12px]" style={{ color: activeHealth.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
+                {activeHealth.active ? t('memory.activeState') : t('memory.inactiveState')}
+              </div>
+            </div>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthStatus')}</div>
+              <div className="text-[12px]" style={{ color: healthColor(activeHealth.status_command?.ok) }}>
+                {healthText(activeHealth.status_command?.ok)}
+              </div>
+            </div>
+          </div>
+          {!!activeHealth.config_files.length && (
+            <div className="mt-2">
+              <div className="text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+                {t('memory.healthConfigFiles')}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {activeHealth.config_files.map(file => (
+                  <span
+                    key={file.path}
+                    className="text-[11px] px-1.5 py-0.5 font-mono"
+                    style={{
+                      border: '1px solid var(--hud-border)',
+                      color: file.exists ? 'var(--hud-success)' : 'var(--hud-text-dim)',
+                    }}
+                  >
+                    {file.path}: {file.exists ? t('memory.present') : t('memory.fileMissing')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="text-[10px] mt-2" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.lastChecked')}: {checkedAtText(activeHealth.checked_at)}
+          </div>
+        </div>
+      )}
+
+      {!!provider.checks?.length && (
+        <div>
+          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.dependencyChecks')}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {provider.checks.map(check => (
+              <span
+                key={`${check.kind}:${check.name}`}
+                className="text-[11px] px-1.5 py-0.5"
+                style={{
+                  border: '1px solid var(--hud-border)',
+                  color: check.ok ? 'var(--hud-success)' : 'var(--hud-warning)',
+                }}
+              >
+                {check.name}: {check.ok ? t('memory.present') : t('memory.missingDependency')}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!!provider.notes?.length && (
+        <div className="text-[12px] font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+          {provider.notes.join(' · ')}
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          onClick={onCheck}
+          disabled={busy}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {busy ? '...' : t('memory.checkStatus')}
+        </button>
+      </div>
+
+      {statusResult && (
+        <div>
+          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.statusOutput')}
+          </div>
+          <pre
+            role="button"
+            tabIndex={0}
+            aria-label={t('memory.statusOutput')}
+            onClick={onOpenStatusModal}
+            onKeyDown={event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onOpenStatusModal()
+              }
+            }}
+            className="text-[11px] whitespace-pre-wrap p-2 overflow-auto cursor-pointer"
+            style={{
+              background: 'var(--hud-bg-deep)',
+              border: '1px solid var(--hud-border)',
+              color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
+              maxHeight: '280px',
+              minHeight: '180px',
+            }}
+          >
+            {statusOutput}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProviderExternalDataTab({
+  provider,
+  externalView,
+  busy,
+  error,
+  onRefresh,
+}: {
+  provider: MemoryProviderInfo
+  externalView: MemoryProviderExternalView | null
+  busy: boolean
+  error: string
+  onRefresh: () => void
+}) {
+  return (
+    <ExternalMemoryViewPanel
+      provider={provider}
+      externalView={externalView}
+      busy={busy}
+      error={error}
+      onRefresh={onRefresh}
+    />
+  )
+}
+
+function ProviderInstallGuideTab({
+  provider,
+  setupCommand,
+  statusCommand,
+  offCommand,
+}: {
+  provider: MemoryProviderInfo
+  setupCommand: string
+  statusCommand: string
+  offCommand: string
+}) {
+  const { t } = useTranslation()
+  const commands = [
+    { label: t('memory.installCommand'), command: provider.setup_command || setupCommand },
+    { label: t('memory.configCommand'), command: provider.config_command || setupCommand },
+    { label: t('memory.statusCommand'), command: statusCommand },
+    { label: t('memory.offCommand'), command: offCommand },
+  ].filter(item => item.command)
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.installGuideHint')}
+      </div>
+      {commands.map(item => (
+        <div key={`${item.label}:${item.command}`} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {item.label}
+          </div>
+          <code className="text-[12px] break-all" style={{ color: 'var(--hud-text)' }}>{item.command}</code>
+        </div>
+      ))}
+      <div className="text-[11px]" style={{ color: 'var(--hud-warning)' }}>
+        {t('memory.installGuideRisk')}
+      </div>
+    </div>
+  )
+}
+
 function MemoryProvidersPanel({
   data,
   onMutate,
@@ -1493,6 +2088,7 @@ function MemoryProvidersPanel({
   const [selected, setSelected] = useState('')
   const [selectedModes, setSelectedModes] = useState<Record<string, string>>({})
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({})
+  const [activeProviderTab, setActiveProviderTab] = useState<MemoryProviderConsoleTab>('overview')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1507,6 +2103,7 @@ function MemoryProvidersPanel({
   const selectedProvider = providers.find(provider => provider.id === selected)
   const activeProvider = providers.find(provider => provider.id === active)
   const detailProvider = selectedProvider || activeProvider || providers[0]
+  const selectedProviderId = detailProvider?.id || ''
   const externalMemoryTitleContext = activeProvider?.label || t('memory.notConfigured')
   const externalMemoryTitle = lang === 'zh'
     ? `${t('memory.externalMemory')}（${externalMemoryTitleContext}）`
@@ -1520,25 +2117,12 @@ function MemoryProvidersPanel({
       .filter(field => field.name === 'mode' && !!detailProvider?.config_modes?.length)
       .map(field => field.name)
   )
-  const fieldMap = new Map((detailProvider?.config_fields || []).map(field => [field.name, field]))
   const visibleConfigFields = detailProvider
     ? (detailProvider.config_fields || []).filter(field => {
       if (modeFieldNames.has(field.name)) return false
       if (!selectedMode || !field.mode_ids?.length) return true
       return field.mode_ids.includes(selectedMode)
     })
-    : []
-  const minimumConfigFields = activeMode
-    ? activeMode.required_fields
-      .filter(name => !modeFieldNames.has(name))
-      .map(name => fieldMap.get(name)?.label || name)
-    : []
-  const minimumConfigGroups = activeMode
-    ? activeMode.required_any.map(group => group
-      .filter(name => !modeFieldNames.has(name))
-      .map(name => fieldMap.get(name)?.label || name)
-      .join(' / ')
-    ).filter(Boolean)
     : []
 
   useEffect(() => {
@@ -1551,6 +2135,8 @@ function MemoryProvidersPanel({
     setConfigDraft(nextDraft)
     setError('')
     setNotice('')
+    setStatusResult(null)
+    setStatusModalOpen(false)
   }, [detailProvider?.id, data?.active_provider])
 
   useEffect(() => {
@@ -1594,7 +2180,7 @@ function MemoryProvidersPanel({
 
   const fieldHasValue = (
     provider: MemoryProviderInfo,
-    field: MemoryProviderInfo['config_fields'][number],
+    field: MemoryProviderConfigField,
     modeId = ''
   ) => {
     if (field.name === 'mode' && modeId) return true
@@ -1617,7 +2203,7 @@ function MemoryProvidersPanel({
         .map(field => field.required_group)
     const missingRequired = requiredFields
       .map(name => fieldsByName.get(name))
-      .filter((field): field is MemoryProviderInfo['config_fields'][number] => !!field)
+      .filter((field): field is MemoryProviderConfigField => !!field)
       .filter(field => !fieldHasValue(provider, field, modeId))
       .filter(field => !modeFieldNames.has(field.name))
       .map(field => field.label || field.name)
@@ -1666,7 +2252,7 @@ function MemoryProvidersPanel({
     return t('memory.statusNotRun')
   }
 
-  const fieldIsRequired = (field: MemoryProviderInfo['config_fields'][number]) => {
+  const fieldIsRequired = (field: MemoryProviderConfigField) => {
     if (activeMode) {
       return activeMode.required_fields.includes(field.name)
         || activeMode.required_any.some(group => group.includes(field.name))
@@ -1758,6 +2344,81 @@ function MemoryProvidersPanel({
     }
   }
 
+  const renderProviderTab = () => {
+    if (!detailProvider) {
+      return <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.selectProvider')}</div>
+    }
+    if (activeProviderTab === 'config') {
+      return (
+        <ProviderConfigTab
+          provider={detailProvider}
+          activeMode={activeMode}
+          selectedMode={selectedMode}
+          visibleConfigFields={visibleConfigFields}
+          configDraft={configDraft}
+          requiredConfigIssues={requiredConfigIssues}
+          busy={busy}
+          onModeSelect={mode => setSelectedModes(prev => ({ ...prev, [detailProvider.id]: mode }))}
+          onDraftChange={(field, value) => setConfigDraft(prev => ({ ...prev, [field]: value }))}
+          onSave={saveConfig}
+          fieldIsRequired={fieldIsRequired}
+        />
+      )
+    }
+    if (activeProviderTab === 'diagnostics') {
+      return (
+        <ProviderDiagnosticsTab
+          provider={detailProvider}
+          activeHealth={activeHealth}
+          statusResult={statusResult}
+          statusOutput={statusOutput}
+          busy={busy}
+          checkedAtText={checkedAtText}
+          healthColor={healthColor}
+          healthText={healthText}
+          onCheck={runStatusCheck}
+          onOpenStatusModal={() => setStatusModalOpen(true)}
+        />
+      )
+    }
+    if (activeProviderTab === 'external') {
+      return (
+        <ProviderExternalDataTab
+          provider={detailProvider}
+          externalView={externalView}
+          busy={externalViewBusy}
+          error={externalViewError}
+          onRefresh={refreshExternalView}
+        />
+      )
+    }
+    if (activeProviderTab === 'install') {
+      return (
+        <ProviderInstallGuideTab
+          provider={detailProvider}
+          setupCommand={data?.setup_command || 'hermes memory setup'}
+          statusCommand={data?.status_command || 'hermes memory status'}
+          offCommand={data?.off_command || 'hermes memory off'}
+        />
+      )
+    }
+    return (
+      <ProviderOverviewTab
+        provider={detailProvider}
+        activeProvider={activeProvider}
+        activeHealth={activeHealth}
+        statusCommand={data?.status_command || 'hermes memory status'}
+        busy={busy}
+        readinessText={readinessText}
+        healthColor={healthColor}
+        healthText={healthText}
+        onCheck={runStatusCheck}
+        onEnable={() => detailProvider && submit(detailProvider.id)}
+        onDisable={() => submit('')}
+      />
+    )
+  }
+
   return (
     <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
@@ -1768,53 +2429,44 @@ function MemoryProvidersPanel({
           <div className="text-[13px]" style={{ color: activeProvider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
             {activeProvider ? readinessText(activeProvider) : t('memory.notConfigured')}
           </div>
-          <div className="font-mono text-[11px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
-            {activeProvider ? activeProvider.config_command : data?.setup_command || 'hermes memory setup'}
-          </div>
         </div>
-        {active && (
-          <button
-            onClick={() => submit('')}
-            disabled={busy}
-            className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
-            type="button"
-          >
-            {busy ? '...' : t('memory.turnOffExternal')}
-          </button>
-        )}
+        <div className="font-mono text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {data?.status_command || 'hermes memory status'}
+        </div>
       </div>
 
-      <div className="font-mono text-[11px] mb-3" style={{ color: 'var(--hud-text-dim)' }}>
-        {data?.status_command || 'hermes memory status'}
-      </div>
+      <ProviderPicker
+        providers={providers}
+        selectedId={selectedProviderId}
+        activeId={active}
+        busy={busy}
+        onSelect={setSelected}
+        readinessText={readinessText}
+      />
 
-      <div className="flex flex-wrap gap-2 mb-3">
-        {providers.map(provider => {
-          const isSelected = selected === provider.id
-          const isActive = provider.active
+      <div className="flex flex-wrap gap-1.5 my-3">
+        {providerConsoleTabs.map(tab => {
+          const activeTab = activeProviderTab === tab.id
           return (
             <button
-              key={provider.id}
-              onClick={() => setSelected(provider.id)}
-              disabled={busy}
-              className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+              key={tab.id}
+              onClick={() => setActiveProviderTab(tab.id)}
+              className="px-2 py-1 text-[12px] cursor-pointer"
               style={{
-                background: isActive || isSelected ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
-                color: isActive || isSelected ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
+                background: activeTab ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
+                color: activeTab ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
                 border: '1px solid var(--hud-border)',
               }}
               type="button"
-              title={readinessText(provider)}
             >
-              {provider.label}{provider.configured ? ' *' : ''}
+              {t(tab.labelKey)}
             </button>
           )
         })}
       </div>
 
       <div className="text-[13px]">
-        <div className="flex flex-wrap items-center gap-2 mb-2">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>
             {detailProvider?.label || t('memory.selectProvider')}
           </span>
@@ -1829,284 +2481,13 @@ function MemoryProvidersPanel({
             </span>
           )}
         </div>
-        <div style={{ color: 'var(--hud-text-dim)' }}>
-          {t('memory.oneExternalOnly')}
-        </div>
-        <div className="font-mono text-[12px] mt-2" style={{ color: 'var(--hud-text-dim)' }}>
-          {detailProvider?.config_command || data?.setup_command || 'hermes memory setup'}
-        </div>
 
-        {detailProvider && (
-          <div className="mt-3 space-y-3">
-            <CapabilityMatrix
-              capabilities={detailProvider.capabilities}
-              schemaSource={detailProvider.schema_source}
-            />
+        {renderProviderTab()}
 
-            <ExternalMemoryViewPanel
-              provider={detailProvider}
-              externalView={externalView}
-              busy={externalViewBusy}
-              error={externalViewError}
-              onRefresh={refreshExternalView}
-            />
-
-            {!!detailProvider.config_modes?.length && (
-              <div>
-                <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.configMode')}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {detailProvider.config_modes.map(mode => {
-                    const selectedConfigMode = selectedMode === mode.id
-                    return (
-                      <button
-                        key={mode.id}
-                        onClick={() => setSelectedModes(prev => ({ ...prev, [detailProvider.id]: mode.id }))}
-                        disabled={busy}
-                        className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
-                        style={{
-                          background: selectedConfigMode ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
-                          color: selectedConfigMode ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
-                          border: '1px solid var(--hud-border)',
-                        }}
-                        type="button"
-                        title={mode.description || mode.storage}
-                      >
-                        {mode.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
-                {t('memory.minimumConfig')}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {[...minimumConfigFields, ...minimumConfigGroups].length ? (
-                  [...minimumConfigFields, ...minimumConfigGroups].map(item => (
-                    <span
-                      key={item}
-                      className="text-[11px] px-1.5 py-0.5"
-                      style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-warning)' }}
-                    >
-                      {item} {t('memory.requiredMarker')}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
-                    {t('memory.noMinimumConfig')}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
-                {t('memory.configureProvider')}
-              </div>
-              {visibleConfigFields.length ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {visibleConfigFields.map(field => {
-                    const current = detailProvider.config_values?.[field.name]
-                    return (
-                      <label key={field.name} className="block">
-                        <span className="flex flex-wrap items-center gap-1.5 text-[11px] mb-1">
-                          <span style={{ color: 'var(--hud-text-dim)' }}>
-                            {field.label}
-                            {fieldIsRequired(field) && (
-                              <span style={{ color: 'var(--hud-error, #f44)' }}> {t('memory.requiredMarker')}</span>
-                            )}
-                          </span>
-                          {field.secret && current?.configured && (
-                            <span style={{ color: 'var(--hud-success)' }}>{t('memory.secretConfigured')}</span>
-                          )}
-                        </span>
-                        <input
-                          value={configDraft[field.name] ?? ''}
-                          type={field.secret ? 'password' : 'text'}
-                          onChange={e => setConfigDraft(prev => ({ ...prev, [field.name]: e.target.value }))}
-                          placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
-                          className="w-full text-[12px] px-2 py-1.5 outline-none"
-                          style={{
-                            background: 'var(--hud-bg-deep)',
-                            border: '1px solid var(--hud-border)',
-                            color: 'var(--hud-text)',
-                          }}
-                        />
-                        <span className="block text-[10px] mt-0.5 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
-                          {current?.source || field.path || field.storage}
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.noConfigFields')}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!!requiredConfigIssues.length && (
-          <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error, #f44)' }}>
-            {t('memory.requiredConfigMissing')}: {requiredConfigIssues.join(', ')}
-          </div>
-        )}
-
-        {activeHealth && (
-          <div className="mt-3">
-            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.healthChecks')}
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
-                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthConfig')}</div>
-                <div className="text-[12px]" style={{ color: healthColor(activeHealth.required_config.ok) }}>
-                  {healthText(activeHealth.required_config.ok)}
-                </div>
-              </div>
-              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
-                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthDependencies')}</div>
-                <div className="text-[12px]" style={{ color: healthColor(activeHealth.dependencies.ok) }}>
-                  {healthText(activeHealth.dependencies.ok)}
-                </div>
-              </div>
-              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
-                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
-                <div className="text-[12px]" style={{ color: activeHealth.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
-                  {activeHealth.active ? t('memory.activeState') : t('memory.inactiveState')}
-                </div>
-              </div>
-              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
-                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthStatus')}</div>
-                <div className="text-[12px]" style={{ color: healthColor(activeHealth.status_command?.ok) }}>
-                  {healthText(activeHealth.status_command?.ok)}
-                </div>
-              </div>
-            </div>
-            {!!activeHealth.config_files.length && (
-              <div className="mt-2">
-                <div className="text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.healthConfigFiles')}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {activeHealth.config_files.map(file => (
-                    <span
-                      key={file.path}
-                      className="text-[11px] px-1.5 py-0.5 font-mono"
-                      style={{
-                        border: '1px solid var(--hud-border)',
-                        color: file.exists ? 'var(--hud-success)' : 'var(--hud-text-dim)',
-                      }}
-                    >
-                      {file.path}: {file.exists ? t('memory.present') : t('memory.fileMissing')}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="text-[10px] mt-2" style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.lastChecked')}: {checkedAtText(activeHealth.checked_at)}
-            </div>
-          </div>
-        )}
-
-        {!!detailProvider?.checks?.length && (
-          <div className="mt-3">
-            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.dependencyChecks')}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {detailProvider.checks.map(check => (
-                <span
-                  key={`${check.kind}:${check.name}`}
-                  className="text-[11px] px-1.5 py-0.5"
-                  style={{
-                    border: '1px solid var(--hud-border)',
-                    color: check.ok ? 'var(--hud-success)' : 'var(--hud-warning)',
-                  }}
-                >
-                  {check.name}: {check.ok ? t('memory.present') : t('memory.missingDependency')}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!!detailProvider?.notes?.length && (
-          <div className="mt-3 text-[12px] font-mono" style={{ color: 'var(--hud-text-dim)' }}>
-            {detailProvider.notes.join(' · ')}
-          </div>
-        )}
-
-        <div className="flex flex-wrap justify-end gap-2 mt-3">
-          <button
-            onClick={saveConfig}
-            disabled={busy || !detailProvider || !detailProvider.config_fields?.length || !!requiredConfigIssues.length}
-            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
-            type="button"
-          >
-            {busy ? '...' : t('memory.saveProviderConfig')}
-          </button>
-          <button
-            onClick={runStatusCheck}
-            disabled={busy || !detailProvider}
-            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
-            type="button"
-          >
-            {busy ? '...' : t('memory.checkStatus')}
-          </button>
-          <button
-            onClick={() => detailProvider && submit(detailProvider.id)}
-            disabled={busy || !detailProvider || detailProvider.id === active}
-            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
-            type="button"
-          >
-            {busy ? '...' : detailProvider?.id === active ? t('memory.activeProvider') : t('memory.setProvider')}
-          </button>
-        </div>
         {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
         {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
-
-        {statusResult && (
-          <div className="mt-3">
-            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.statusOutput')}
-            </div>
-            <pre
-              role="button"
-              tabIndex={0}
-              aria-label={t('memory.statusOutput')}
-              onClick={() => setStatusModalOpen(true)}
-              onKeyDown={event => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  setStatusModalOpen(true)
-                }
-              }}
-              className="text-[11px] whitespace-pre-wrap p-2 overflow-auto cursor-pointer"
-              style={{
-                background: 'var(--hud-bg-deep)',
-                border: '1px solid var(--hud-border)',
-                color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
-                maxHeight: '280px',
-                minHeight: '180px',
-              }}
-            >
-              {statusOutput}
-            </pre>
-          </div>
-        )}
       </div>
+
       {statusModalOpen && statusResult && (
         <div
           role="dialog"
