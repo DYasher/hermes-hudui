@@ -2061,13 +2061,39 @@ function ProviderInstallGuideTab({
     { label: t('memory.statusCommand'), command: statusCommand },
     { label: t('memory.offCommand'), command: offCommand },
   ].filter(item => item.command)
+  const modeCommands = provider.config_modes?.length
+    ? provider.config_modes.map(mode => ({ mode, commands }))
+    : []
 
   return (
     <div className="space-y-2">
       <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
         {t('memory.installGuideHint')}
       </div>
-      {commands.map(item => (
+      {modeCommands.length ? (
+        <div className="space-y-2">
+          {modeCommands.map(item => (
+            <div key={item.mode.id} className="p-2 space-y-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div>
+                <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{item.mode.label}</div>
+                {!!item.mode.description && (
+                  <div className="text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>{item.mode.description}</div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {item.commands.map(command => (
+                  <div key={`${item.mode.id}:${command.label}:${command.command}`}>
+                    <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+                      {command.label}
+                    </div>
+                    <code className="text-[12px] break-all" style={{ color: 'var(--hud-text)' }}>{command.command}</code>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : commands.map(item => (
         <div key={`${item.label}:${item.command}`} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
           <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
             {item.label}

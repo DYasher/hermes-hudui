@@ -169,6 +169,17 @@ def test_memory_panel_uses_external_memory_console_tabs() -> None:
     assert "'memory.installGuide'" in translations
 
 
+def test_memory_panel_renders_mode_aware_install_guide() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    install_block = panel.split("function ProviderInstallGuideTab", 1)[1].split("function MemoryProvidersPanel", 1)[0]
+
+    assert "modeCommands" in install_block
+    assert "provider.config_modes.map(mode => ({ mode, commands }))" in install_block
+    assert "item.mode.label" in install_block
+    assert "item.mode.description" in install_block
+    assert "item.commands.map(command =>" in install_block
+
+
 def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_strip() -> None:
     panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
     translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
