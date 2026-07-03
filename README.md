@@ -6,6 +6,8 @@ Hermes HUD Web UI 是一个运行在浏览器中的 Hermes Agent 监控与管理
 
 本仓库基于 [Hermes HUD UI](https://github.com/joeynyc/hermes-hudui) 做二次开发，当前重点是让本地 Hermes Agent 更适合中文使用、配置管理和可视化调试。
 
+上游 v0.8.0 发布时覆盖 **19 tabs**；当前二次开发版因新增 Safety 页面展示 20 个主要页面。以下发布锚点仍按上游英文名称保留，方便核对 release notes：**Hermes Teal**、**Plugin Hub**、**Gateway Managed Tools**、**Model Analytics**。
+
 ![Executive Dashboard](assets/dashboard-executive.png)
 
 ![Gateway Managed Tools](assets/gateway-tools.png)
@@ -98,7 +100,9 @@ Replay 页面把 Hermes Agent 运行记录导出为可分享的证明材料。
 - 1200 x 630 PNG 分享卡片
 - fork-safe `fork.json`
 
-Safe Share Mode 是默认导出策略。它会在写出分享材料前脱敏原始工具参数、终端输出、assistant reasoning、类似 token 的值、邮箱、本地路径和其他敏感字段。导出文件包含本机生成的 hash 和 Ed25519 签名，用于证明本地文件完整性，不代表第三方外部认证。
+示例脱敏 replay：[`assets/example-replay.redacted.json`](assets/example-replay.redacted.json)
+
+Safe Share Mode 是默认导出策略（**Safe Share Mode is the default export posture**）。它会在写出分享材料前脱敏原始工具参数、终端输出、assistant reasoning、类似 token 的值、邮箱、本地路径和其他敏感字段。导出文件包含本机生成的 hash 和 Ed25519 签名，用于证明本地文件完整性，**not external third-party attestation**。
 
 远程发布是可选能力。你可以在 Replay 页配置 GitHub Pages 或其他 git 静态站点仓库，然后手动同步公开 gallery。远程同步默认关闭，只有显式点击同步才会推送，且只包含 Safe Share Mode 产物。
 

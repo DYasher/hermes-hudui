@@ -55,7 +55,7 @@ function TabContent({ tab }: { tab: TabId }) {
 // Grid layout per tab — responsive: 1 col on mobile, full on desktop
 const GRID_CLASS: Record<TabId, string> = {
   dashboard: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
-  memory: 'grid-cols-1 sm:grid-cols-2',
+  memory: 'grid-cols-1',
   skills: 'grid-cols-1 lg:grid-cols-[2fr_1fr]',
   sessions: 'grid-cols-1 lg:grid-cols-[2fr_1fr]',
   replay: 'grid-cols-1 lg:grid-cols-[360px_1fr]',

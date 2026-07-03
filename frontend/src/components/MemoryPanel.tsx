@@ -1,7 +1,105 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useApi } from '../hooks/useApi'
 import Panel, { CapacityBar } from './Panel'
 import { useTranslation } from '../i18n'
+
+interface MemoryStatusCommand {
+  ok: boolean
+  exit_code: number | null
+  output: string
+  error: string
+  command: string
+}
+
+interface MemoryProviderHealth {
+  provider: string
+  active: boolean
+  checked_at: string
+  config_files: Array<{
+    path: string
+    kind: 'file' | 'directory'
+    exists: boolean
+  }>
+  required_config: {
+    ok: boolean
+    missing_fields: string[]
+    missing_any: string[][]
+  }
+  dependencies: {
+    ok: boolean
+    checks: Array<{
+      kind: string
+      name: string
+      ok: boolean
+    }>
+  }
+  status_command: MemoryStatusCommand | null
+}
+
+interface MemoryProviderConfigMode {
+  id: string
+  label: string
+  storage: string
+  description: string
+  fields: string[]
+  required_fields: string[]
+  required_any: string[][]
+  optional_fields: string[]
+}
+
+interface MemoryProviderCapabilities {
+  external_read: boolean
+  external_read_mode: string
+  direct_hud_config: boolean
+  requires_network: boolean
+  local_storage: boolean
+  supports_tools: boolean
+  supports_auto_recall: boolean
+  supports_session_ingest: boolean
+  supports_manual_write: boolean
+  hooks: string[]
+}
+
+interface MemoryProviderSchemaSource {
+  kind: 'official_schema' | 'hud_metadata'
+  method: string
+  fallback: boolean
+  source: string
+}
+
+interface MemoryProviderExternalViewSummary {
+  available: boolean
+  readonly: boolean
+  endpoint: string
+  view_type: string
+  reason: string
+}
+
+interface MemoryProviderExternalFact {
+  id: string
+  content: string
+  category: string
+  tags: string[]
+  trust_score: number
+  retrieval_count: number
+  helpful_count: number
+  created_at: string
+  updated_at: string
+}
+
+interface MemoryProviderExternalView {
+  provider: string
+  available: boolean
+  readonly: boolean
+  reason?: string
+  error?: string
+  db_path?: string
+  summary: {
+    total: number
+    categories: Record<string, number>
+  }
+  items: MemoryProviderExternalFact[]
+}
 
 interface MemoryProviderInfo {
   id: string
@@ -26,13 +124,23 @@ interface MemoryProviderInfo {
     path: string
     secret: boolean
     help: string
+    requirement: 'required' | 'required_any' | 'optional'
+    required_group: string[]
+    mode_ids: string[]
   }>
+  config_modes: MemoryProviderConfigMode[]
+  default_mode: string
+  current_mode: string
   config_values: Record<string, {
     configured: boolean
     secret: boolean
     source: string
     value: string
   }>
+  capabilities: MemoryProviderCapabilities
+  schema_source: MemoryProviderSchemaSource
+  external_view: MemoryProviderExternalViewSummary
+  health?: MemoryProviderHealth
   notes?: string[]
 }
 
@@ -51,13 +159,121 @@ interface MemoryProvidersState {
 interface MemoryProviderCheckResult {
   provider: string
   active_provider: string
-  status_command: {
-    ok: boolean
-    exit_code: number | null
-    output: string
-    error: string
-    command: string
+  status_command: MemoryStatusCommand
+  health?: MemoryProviderHealth | null
+}
+
+interface MemoryFileState {
+  target: 'memory' | 'user'
+  label: string
+  path: string
+  exists: boolean
+  editable: boolean
+  content: string
+  total_chars: number
+  max_chars: number
+  capacity_pct: number
+  entry_count: number
+  entries: any[]
+  count_by_category: Record<string, number>
+  modified_at: string
+}
+
+interface MemorySettingsState {
+  memory_enabled: boolean
+  user_profile_enabled: boolean
+  memory_char_limit: number
+  user_char_limit: number
+  write_approval: boolean
+  memory_notifications: 'off' | 'on' | 'verbose'
+  pending_count: number
+}
+
+interface MemoryFilesState {
+  files: {
+    memory: MemoryFileState
+    user: MemoryFileState
   }
+  settings: MemorySettingsState
+}
+
+interface MemoryHistoryCandidate {
+  session_id: string
+  message_id: string
+  title: string
+  source: string
+  started_at: number
+  message_count: number
+  role: string
+  timestamp: number
+  snippet: string
+  content: string
+  suggested_target: 'memory' | 'user'
+}
+
+interface MemoryHistoryState {
+  query: string
+  count: number
+  status: string
+  candidates: MemoryHistoryCandidate[]
+}
+
+interface MemoryHistoryCommitResult {
+  ok: boolean
+  staged: boolean
+  target: 'memory' | 'user'
+  pending_id?: string
+  entry_count?: number
+}
+
+interface MemoryExportState {
+  generated_at: string
+  hermes_home: string
+  files: {
+    memory: MemoryFileState
+    user: MemoryFileState
+  }
+  provider: {
+    active_provider: string
+    providers: Record<string, {
+      label: string
+      storage: string
+      active: boolean
+      configured: boolean
+      current_mode: string
+      fields: Record<string, {
+        label: string
+        storage: string
+        source: string
+        configured: boolean
+        redacted: boolean
+        value: string
+      }>
+    }>
+    redactions: string[]
+  }
+}
+
+interface PendingMemoryWrite {
+  id: string
+  subsystem: string
+  action: string
+  summary: string
+  origin: string
+  created_at: number
+  payload: {
+    action?: string
+    target?: string
+    content?: string
+    old_text?: string
+    operations?: Array<Record<string, string>>
+  }
+}
+
+interface MemoryPendingState {
+  pending: PendingMemoryWrite[]
+  count: number
+  write_approval: boolean
 }
 
 async function memoryApi(method: string, body: Record<string, string>) {
@@ -65,6 +281,32 @@ async function memoryApi(method: string, body: Record<string, string>) {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function saveMemoryFile(target: string, content: string): Promise<MemoryFileState> {
+  const res = await fetch(`/api/memory/files/${target}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function saveMemorySettings(settings: Partial<MemorySettingsState>): Promise<MemorySettingsState> {
+  const res = await fetch('/api/memory/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -88,12 +330,13 @@ async function setMemoryProvider(provider: string): Promise<MemoryProvidersState
 
 async function saveMemoryProviderConfig(
   provider: string,
-  fields: Record<string, string>
+  fields: Record<string, string>,
+  selectedMode = ''
 ): Promise<MemoryProvidersState> {
   const res = await fetch(`/api/memory/providers/${provider}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({ mode: selectedMode, fields }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -108,6 +351,84 @@ async function checkMemoryProviderStatus(provider: string): Promise<MemoryProvid
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider }),
   })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function fetchProviderExternalView(provider: string): Promise<MemoryProviderExternalView> {
+  const res = await fetch(`/api/memory/providers/${provider}/external`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function approvePendingMemory(pendingId: string) {
+  const res = await fetch(`/api/memory/pending/${pendingId}/approve`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function rejectPendingMemory(pendingId: string) {
+  const res = await fetch(`/api/memory/pending/${pendingId}/reject`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function fetchMemoryHistory(query = '', limit = 12): Promise<MemoryHistoryState> {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  if (query.trim()) params.set('q', query.trim())
+  const res = await fetch(`/api/memory/history?${params.toString()}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function commitMemoryHistoryCandidate(
+  target: 'memory' | 'user',
+  candidate: MemoryHistoryCandidate
+): Promise<MemoryHistoryCommitResult> {
+  const res = await fetch('/api/memory/history/commit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      target,
+      content: candidate.content || candidate.snippet,
+      source_session_id: candidate.session_id,
+      source_message_id: candidate.message_id,
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function fetchMemoryExport(): Promise<MemoryExportState> {
+  const res = await fetch('/api/memory/export')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+}
+
+async function createMemoryBackup(): Promise<{ ok: boolean; path: string; generated_at: string; export: MemoryExportState }> {
+  const res = await fetch('/api/memory/export', { method: 'POST' })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Request failed')
@@ -328,15 +649,835 @@ function AddEntryForm({ target, onMutate }: { target: string; onMutate: () => vo
   )
 }
 
-function MemoryEntries({ entries, target, onMutate }: { entries: any[]; target: string; onMutate: () => void }) {
+function MemoryEntries({
+  entries,
+  target,
+  onMutate,
+  columns = 1,
+}: {
+  entries: any[]
+  target: string
+  onMutate: () => void
+  columns?: 1 | 2
+}) {
   const { t } = useTranslation()
   if (!entries?.length) return <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.empty')}</div>
+  const entriesClass = columns === 2 ? 'grid grid-cols-1 lg:grid-cols-2 gap-1.5' : 'space-y-1.5'
 
   return (
-    <div className="space-y-1.5">
+    <div className={entriesClass}>
       {entries.map((e: any) => (
         <MemoryEntry key={e.text} entry={e} target={target} onMutate={onMutate} />
       ))}
+    </div>
+  )
+}
+
+function formatTimestamp(value?: string | number) {
+  if (!value) return ''
+  const parsed = typeof value === 'number' ? new Date(value * 1000) : new Date(value)
+  if (Number.isNaN(parsed.getTime())) return String(value)
+  return parsed.toLocaleString()
+}
+
+function BuiltinMemoryFileCard({
+  file,
+  title,
+  onSaved,
+  children,
+}: {
+  file?: MemoryFileState
+  title: string
+  onSaved: () => void
+  children?: ReactNode
+}) {
+  const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    if (!file || editing) return
+    setDraft(file.content || '')
+  }, [file?.target, file?.content, editing])
+
+  if (!file) {
+    return (
+      <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+        <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.loading')}</div>
+      </div>
+    )
+  }
+
+  const save = async () => {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await saveMemoryFile(file.target, draft)
+      setEditing(false)
+      setNotice(t('memory.fileSaved'))
+      onSaved()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+        <div>
+          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {title}
+          </div>
+          <div className="font-mono text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {file.path}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            setDraft(file.content || '')
+            setEditing(!editing)
+            setError('')
+            setNotice('')
+          }}
+          className="px-2 py-1 text-[11px] cursor-pointer"
+          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          type="button"
+        >
+          {editing ? t('memory.cancel') : t('memory.fullFileEditor')}
+        </button>
+      </div>
+
+      {file.max_chars > 0 && (
+        <CapacityBar value={file.total_chars || 0} max={file.max_chars} label={t('memory.capacity')} />
+      )}
+      <div className="text-[13px] my-2" style={{ color: 'var(--hud-text-dim)' }}>
+        {file.entry_count || 0} {t('memory.entries')}
+        {file.modified_at ? ` · ${t('memory.modified')}: ${formatTimestamp(file.modified_at)}` : ''}
+      </div>
+
+      {editing ? (
+        <div>
+          <textarea
+            value={draft}
+            onChange={event => setDraft(event.target.value)}
+            className="w-full text-[12px] p-2 outline-none resize-y font-mono"
+            style={{
+              background: 'var(--hud-bg-deep)',
+              border: '1px solid var(--hud-border)',
+              color: 'var(--hud-text)',
+              minHeight: '220px',
+            }}
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <button
+              onClick={() => { setEditing(false); setDraft(file.content || ''); setError('') }}
+              disabled={busy}
+              className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+              style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+              type="button"
+            >
+              {t('memory.cancel')}
+            </button>
+            <button
+              onClick={save}
+              disabled={busy}
+              className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+              style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+              type="button"
+            >
+              {busy ? '...' : t('memory.save')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        children || (
+          <pre
+            className="text-[12px] whitespace-pre-wrap p-2 overflow-auto"
+            style={{
+              background: 'var(--hud-bg-deep)',
+              border: '1px solid var(--hud-border)',
+              color: file.content ? 'var(--hud-text)' : 'var(--hud-text-dim)',
+              maxHeight: '280px',
+            }}
+          >
+            {file.content || t('memory.emptyFile')}
+          </pre>
+        )
+      )}
+      {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
+      {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+    </div>
+  )
+}
+
+function MemorySettingsPanel({
+  settings,
+  onSaved,
+}: {
+  settings?: MemorySettingsState
+  onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState<Partial<MemorySettingsState>>({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    if (!settings) return
+    setDraft(settings)
+    setError('')
+    setNotice('')
+  }, [settings])
+
+  const submit = async () => {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await saveMemorySettings({
+        memory_enabled: !!draft.memory_enabled,
+        user_profile_enabled: !!draft.user_profile_enabled,
+        memory_char_limit: Number(draft.memory_char_limit || 2200),
+        user_char_limit: Number(draft.user_char_limit || 1375),
+        write_approval: !!draft.write_approval,
+        memory_notifications: draft.memory_notifications || 'on',
+      })
+      setNotice(t('memory.settingsSaved'))
+      onSaved()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.settings')}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+        <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--hud-text)' }}>
+          <input
+            type="checkbox"
+            checked={!!draft.memory_enabled}
+            onChange={event => setDraft(prev => ({ ...prev, memory_enabled: event.target.checked }))}
+          />
+          {t('memory.memoryEnabled')}
+        </label>
+        <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--hud-text)' }}>
+          <input
+            type="checkbox"
+            checked={!!draft.user_profile_enabled}
+            onChange={event => setDraft(prev => ({ ...prev, user_profile_enabled: event.target.checked }))}
+          />
+          {t('memory.userProfileEnabled')}
+        </label>
+        <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.memoryCharLimit')}
+          <input
+            type="number"
+            min={1}
+            value={draft.memory_char_limit || 2200}
+            onChange={event => setDraft(prev => ({ ...prev, memory_char_limit: Number(event.target.value) }))}
+            className="w-full mt-1 px-2 py-1 outline-none"
+            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+          />
+        </label>
+        <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.userCharLimit')}
+          <input
+            type="number"
+            min={1}
+            value={draft.user_char_limit || 1375}
+            onChange={event => setDraft(prev => ({ ...prev, user_char_limit: Number(event.target.value) }))}
+            className="w-full mt-1 px-2 py-1 outline-none"
+            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--hud-text)' }}>
+          <input
+            type="checkbox"
+            checked={!!draft.write_approval}
+            onChange={event => setDraft(prev => ({ ...prev, write_approval: event.target.checked }))}
+          />
+          {t('memory.writeApproval')}
+        </label>
+        <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.memoryNotifications')}
+          <select
+            value={draft.memory_notifications || 'on'}
+            onChange={event => setDraft(prev => ({ ...prev, memory_notifications: event.target.value as MemorySettingsState['memory_notifications'] }))}
+            className="w-full mt-1 px-2 py-1 outline-none"
+            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+          >
+            <option value="off">{t('memory.notificationsOff')}</option>
+            <option value="on">{t('memory.notificationsOn')}</option>
+            <option value="verbose">{t('memory.notificationsVerbose')}</option>
+          </select>
+        </label>
+      </div>
+      <div className="flex justify-end mt-2">
+        <button
+          onClick={submit}
+          disabled={busy}
+          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+          type="button"
+        >
+          {busy ? '...' : t('memory.saveSettings')}
+        </button>
+      </div>
+      {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
+      {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+    </div>
+  )
+}
+
+function PendingMemoryPanel({
+  data,
+  onMutate,
+}: {
+  data?: MemoryPendingState
+  onMutate: () => void
+}) {
+  const { t } = useTranslation()
+  const [busyId, setBusyId] = useState('')
+  const [error, setError] = useState('')
+
+  const run = async (pendingId: string, action: 'approve' | 'reject') => {
+    setBusyId(`${action}:${pendingId}`)
+    setError('')
+    try {
+      if (action === 'approve') await approvePendingMemory(pendingId)
+      else await rejectPendingMemory(pendingId)
+      onMutate()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  return (
+    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.pendingWrites')}
+        </div>
+        <div className="text-[12px]" style={{ color: data?.write_approval ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
+          {t('memory.writeApproval')}: {data?.write_approval ? t('memory.activeState') : t('memory.inactiveState')}
+        </div>
+      </div>
+      {!data?.pending?.length ? (
+        <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.noPendingWrites')}</div>
+      ) : (
+        <div className="space-y-2">
+          {data.pending.map(item => (
+            <div key={item.id} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="font-mono text-[12px]" style={{ color: 'var(--hud-primary)' }}>
+                    {item.id} · {item.action || item.payload?.action || 'memory'}
+                  </div>
+                  <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+                    {item.origin}{item.created_at ? ` · ${formatTimestamp(item.created_at)}` : ''}
+                  </div>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => run(item.id, 'approve')}
+                    disabled={!!busyId}
+                    className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+                    style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+                    type="button"
+                  >
+                    {busyId === `approve:${item.id}` ? '...' : t('memory.approve')}
+                  </button>
+                  <button
+                    onClick={() => run(item.id, 'reject')}
+                    disabled={!!busyId}
+                    className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+                    style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
+                    type="button"
+                  >
+                    {busyId === `reject:${item.id}` ? '...' : t('memory.reject')}
+                  </button>
+                </div>
+              </div>
+              <div className="text-[13px] mt-2" style={{ color: 'var(--hud-text)' }}>
+                {item.summary || item.payload?.content || t('memory.noStatusOutput')}
+              </div>
+              {!!item.payload?.old_text && (
+                <div className="text-[12px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
+                  {t('memory.oldText')}: {item.payload.old_text}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+    </div>
+  )
+}
+
+function MemoryHistoryPanel({ onMutate }: { onMutate: () => void }) {
+  const { t } = useTranslation()
+  const [query, setQuery] = useState('')
+  const [history, setHistory] = useState<MemoryHistoryState | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [busyId, setBusyId] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const runSearch = async (nextQuery = query) => {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      setHistory(await fetchMemoryHistory(nextQuery, 12))
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    runSearch('')
+  }, [])
+
+  const saveCandidate = async (candidate: MemoryHistoryCandidate, target: 'memory' | 'user') => {
+    setBusyId(`${candidate.message_id}:${target}`)
+    setError('')
+    setNotice('')
+    try {
+      const result = await commitMemoryHistoryCandidate(target, candidate)
+      setNotice(result.staged ? t('memory.savedToPending') : t('memory.savedToFile'))
+      onMutate()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  return (
+    <div className="p-2 mt-3" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div>
+          <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.historyCandidates')}
+          </div>
+          <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.historyCandidateHint')}
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <input
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') runSearch()
+            }}
+            placeholder={t('memory.searchHistory')}
+            className="text-[12px] px-2 py-1 outline-none"
+            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+          />
+          <button
+            onClick={() => runSearch()}
+            disabled={busy}
+            className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.search')}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="text-[12px] mb-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+      {notice && <div className="text-[12px] mb-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
+      {!history?.candidates?.length ? (
+        <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {busy ? t('memory.historyLoading') : t('memory.noHistoryCandidates')}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {history.candidates.map(candidate => (
+            <div
+              key={`${candidate.session_id}:${candidate.message_id}`}
+              className="p-2"
+              style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                <div>
+                  <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{candidate.title}</div>
+                  <div className="font-mono text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+                    {candidate.source || 'session'} · {formatTimestamp(candidate.timestamp || candidate.started_at)}
+                  </div>
+                </div>
+                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+                  {candidate.suggested_target === 'user' ? t('memory.userProfile') : t('memory.builtin')}
+                </div>
+              </div>
+              <div className="text-[13px] mb-2" style={{ color: 'var(--hud-text)' }}>
+                {candidate.snippet}
+              </div>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <button
+                  onClick={() => saveCandidate(candidate, 'memory')}
+                  disabled={!!busyId}
+                  className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+                  style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                  type="button"
+                >
+                  {busyId === `${candidate.message_id}:memory` ? '...' : t('memory.saveToMemory')}
+                </button>
+                <button
+                  onClick={() => saveCandidate(candidate, 'user')}
+                  disabled={!!busyId}
+                  className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+                  style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+                  type="button"
+                >
+                  {busyId === `${candidate.message_id}:user` ? '...' : t('memory.saveToUser')}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MemoryExportPanel() {
+  const { t } = useTranslation()
+  const [data, setData] = useState<MemoryExportState | null>(null)
+  const [backupPath, setBackupPath] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const loadExport = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      setData(await fetchMemoryExport())
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    loadExport()
+  }, [])
+
+  const createBackup = async () => {
+    setBusy(true)
+    setError('')
+    setBackupPath('')
+    try {
+      const result = await createMemoryBackup()
+      setData(result.export)
+      setBackupPath(result.path)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const files = Object.values(data?.files || {})
+  const providerCount = Object.keys(data?.provider.providers || {}).length
+  const redactionCount = data?.provider.redactions.length || 0
+
+  return (
+    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+        <div>
+          <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.exportBackup')}
+          </div>
+          <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.exportBackupHint')}
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <button
+            onClick={loadExport}
+            disabled={busy}
+            className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.previewExport')}
+          </button>
+          <button
+            onClick={createBackup}
+            disabled={busy}
+            className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.createBackup')}
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.files')}</div>
+          <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{files.length}</div>
+        </div>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalProvider')}</div>
+          <div className="text-[12px]" style={{ color: data?.provider.active_provider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
+            {data?.provider.active_provider || t('memory.noneExternal')}
+          </div>
+        </div>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.configuredProviders')}</div>
+          <div className="text-[12px]" style={{ color: 'var(--hud-text)' }}>{providerCount}</div>
+        </div>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.redactedFields')}</div>
+          <div className="text-[12px]" style={{ color: redactionCount ? 'var(--hud-warning)' : 'var(--hud-success)' }}>{redactionCount}</div>
+        </div>
+      </div>
+      {!!backupPath && (
+        <div className="font-mono text-[11px] mt-2" style={{ color: 'var(--hud-success)' }}>
+          {t('memory.backupPath')}: {backupPath}
+        </div>
+      )}
+      {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+    </div>
+  )
+}
+
+function MemoryGovernancePanel({
+  settings,
+  pending,
+  onSettingsSaved,
+  onPendingMutate,
+}: {
+  settings?: MemorySettingsState
+  pending?: MemoryPendingState
+  onSettingsSaved: () => void
+  onPendingMutate: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="mt-3">
+      <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.governance')}
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <MemorySettingsPanel settings={settings} onSaved={onSettingsSaved} />
+        <PendingMemoryPanel data={pending} onMutate={onPendingMutate} />
+      </div>
+      <div className="mt-3">
+        <MemoryExportPanel />
+      </div>
+    </div>
+  )
+}
+
+function CapabilityMatrix({
+  capabilities,
+  schemaSource,
+}: {
+  capabilities?: MemoryProviderCapabilities
+  schemaSource?: MemoryProviderSchemaSource
+}) {
+  const { t } = useTranslation()
+  const yesNo = (value?: boolean) => value ? t('memory.yes') : t('memory.no')
+  const capabilityItems = [
+    { key: 'external_read_mode', label: t('memory.externalRead'), value: capabilities?.external_read ? capabilities.external_read_mode : t('memory.no') },
+    { key: 'direct_hud_config', label: t('memory.directHudConfig'), value: yesNo(capabilities?.direct_hud_config) },
+    { key: 'requires_network', label: t('memory.requiresNetwork'), value: yesNo(capabilities?.requires_network) },
+    { key: 'local_storage', label: t('memory.localStorage'), value: yesNo(capabilities?.local_storage) },
+    { key: 'supports_auto_recall', label: t('memory.autoRecall'), value: yesNo(capabilities?.supports_auto_recall) },
+    { key: 'supports_session_ingest', label: t('memory.sessionIngest'), value: yesNo(capabilities?.supports_session_ingest) },
+    { key: 'supports_manual_write', label: t('memory.manualWrite'), value: yesNo(capabilities?.supports_manual_write) },
+    { key: 'supports_tools', label: t('memory.tools'), value: yesNo(capabilities?.supports_tools) },
+  ]
+  const hooks = capabilities?.hooks || []
+  const schemaLabel = schemaSource?.kind === 'official_schema' ? t('memory.officialSchema') : t('memory.hudMetadata')
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+      <div className="lg:col-span-2">
+        <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.capabilityMatrix')}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+          {capabilityItems.map(item => (
+            <div
+              key={item.key}
+              className="px-2 py-1"
+              style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}
+            >
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{item.label}</div>
+              <div className="text-[12px]" style={{ color: 'var(--hud-text)' }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        {!!hooks.length && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            <span className="text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.hooks')}</span>
+            {hooks.map(hook => (
+              <span
+                key={hook}
+                className="text-[11px] px-1.5 py-0.5 font-mono"
+                style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-primary)' }}
+              >
+                {hook}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.schemaSource')}
+        </div>
+        <div className="px-2 py-1.5" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+          <div className="text-[12px]" style={{ color: schemaSource?.fallback ? 'var(--hud-warning)' : 'var(--hud-success)' }}>
+            {schemaLabel}
+          </div>
+          <div className="text-[11px] font-mono mt-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {schemaSource?.method || schemaSource?.source || 'HUD'}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ExternalMemoryViewPanel({
+  provider,
+  externalView,
+  busy,
+  error,
+  onRefresh,
+}: {
+  provider: MemoryProviderInfo
+  externalView: MemoryProviderExternalView | null
+  busy: boolean
+  error: string
+  onRefresh: () => void
+}) {
+  const { t } = useTranslation()
+  const meta = provider.external_view
+  const categories = externalView?.summary.categories || {}
+  const items = externalView?.items || []
+  const unavailableReason = externalView?.reason || meta.reason || t('memory.externalUnavailable')
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.externalView')}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+            {t('memory.readOnly')}
+          </span>
+          {meta.available && (
+            <button
+              onClick={onRefresh}
+              disabled={busy}
+              className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+              style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+              type="button"
+            >
+              {busy ? '...' : t('memory.refreshExternal')}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!meta.available ? (
+        <div className="text-[12px] p-2" style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-text-dim)' }}>
+          {t('memory.externalUnavailable')}: {unavailableReason}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.entries')}</div>
+              <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{externalView?.summary.total ?? 0}</div>
+            </div>
+            <div className="px-2 py-1 md:col-span-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalCategories')}</div>
+              <div className="text-[12px]" style={{ color: 'var(--hud-text)' }}>
+                {Object.keys(categories).length
+                  ? Object.entries(categories).map(([name, count]) => `${name}: ${count}`).join(' · ')
+                  : t('memory.empty')}
+              </div>
+            </div>
+          </div>
+
+          {busy && <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalLoading')}</div>}
+          {error && <div className="text-[12px]" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+          {externalView?.available === false && (
+            <div className="text-[12px]" style={{ color: 'var(--hud-warning)' }}>
+              {t('memory.externalUnavailable')}: {unavailableReason}
+            </div>
+          )}
+
+          {!busy && !items.length ? (
+            <div className="text-[12px] p-2" style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-text-dim)' }}>
+              {t('memory.externalNoItems')}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {items.map(item => (
+                <div
+                  key={item.id}
+                  className="p-2"
+                  style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                    <div>
+                      <span className="font-mono text-[11px]" style={{ color: 'var(--hud-primary)' }}>
+                        {item.category || 'general'}
+                      </span>
+                      {!!item.tags?.length && (
+                        <span className="text-[11px] ml-2" style={{ color: 'var(--hud-text-dim)' }}>
+                          {item.tags.join(', ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-mono text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+                      {t('memory.externalTrust')}: {item.trust_score}
+                      {' · '}
+                      {t('memory.externalRetrievals')}: {item.retrieval_count}
+                      {' · '}
+                      {t('memory.externalHelpful')}: {item.helpful_count}
+                    </div>
+                  </div>
+                  <div className="text-[13px]" style={{ color: 'var(--hud-text)' }}>{item.content}</div>
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
+                    {item.updated_at || item.created_at || item.id}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -348,19 +1489,57 @@ function MemoryProvidersPanel({
   data?: MemoryProvidersState
   onMutate: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
   const [selected, setSelected] = useState('')
+  const [selectedModes, setSelectedModes] = useState<Record<string, string>>({})
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [statusResult, setStatusResult] = useState<MemoryProviderCheckResult | null>(null)
+  const [statusModalOpen, setStatusModalOpen] = useState(false)
+  const [externalView, setExternalView] = useState<MemoryProviderExternalView | null>(null)
+  const [externalViewBusy, setExternalViewBusy] = useState(false)
+  const [externalViewError, setExternalViewError] = useState('')
 
   const providers = Object.values(data?.providers || {})
   const active = data?.active_provider || ''
   const selectedProvider = providers.find(provider => provider.id === selected)
   const activeProvider = providers.find(provider => provider.id === active)
   const detailProvider = selectedProvider || activeProvider || providers[0]
+  const externalMemoryTitleContext = activeProvider?.label || t('memory.notConfigured')
+  const externalMemoryTitle = lang === 'zh'
+    ? `${t('memory.externalMemory')}（${externalMemoryTitleContext}）`
+    : `${t('memory.externalMemory')} (${externalMemoryTitleContext})`
+  const selectedMode = detailProvider
+    ? selectedModes[detailProvider.id] || detailProvider.current_mode || detailProvider.default_mode || detailProvider.config_modes?.[0]?.id || ''
+    : ''
+  const activeMode = detailProvider?.config_modes?.find(mode => mode.id === selectedMode)
+  const modeFieldNames = new Set(
+    (detailProvider?.config_fields || [])
+      .filter(field => field.name === 'mode' && !!detailProvider?.config_modes?.length)
+      .map(field => field.name)
+  )
+  const fieldMap = new Map((detailProvider?.config_fields || []).map(field => [field.name, field]))
+  const visibleConfigFields = detailProvider
+    ? (detailProvider.config_fields || []).filter(field => {
+      if (modeFieldNames.has(field.name)) return false
+      if (!selectedMode || !field.mode_ids?.length) return true
+      return field.mode_ids.includes(selectedMode)
+    })
+    : []
+  const minimumConfigFields = activeMode
+    ? activeMode.required_fields
+      .filter(name => !modeFieldNames.has(name))
+      .map(name => fieldMap.get(name)?.label || name)
+    : []
+  const minimumConfigGroups = activeMode
+    ? activeMode.required_any.map(group => group
+      .filter(name => !modeFieldNames.has(name))
+      .map(name => fieldMap.get(name)?.label || name)
+      .join(' / ')
+    ).filter(Boolean)
+    : []
 
   useEffect(() => {
     if (!detailProvider) return
@@ -374,6 +1553,37 @@ function MemoryProvidersPanel({
     setNotice('')
   }, [detailProvider?.id, data?.active_provider])
 
+  useEffect(() => {
+    if (!detailProvider) return
+    const defaultMode = detailProvider.current_mode || detailProvider.default_mode || detailProvider.config_modes?.[0]?.id || ''
+    if (!defaultMode) return
+    setSelectedModes(prev => prev[detailProvider.id] ? prev : { ...prev, [detailProvider.id]: defaultMode })
+  }, [detailProvider?.id, detailProvider?.current_mode, detailProvider?.default_mode])
+
+  useEffect(() => {
+    setExternalView(null)
+    setExternalViewError('')
+    if (!detailProvider || !detailProvider.external_view?.available) {
+      setExternalViewBusy(false)
+      return
+    }
+
+    let cancelled = false
+    setExternalViewBusy(true)
+    fetchProviderExternalView(detailProvider.id)
+      .then(result => {
+        if (!cancelled) setExternalView(result)
+      })
+      .catch((e: any) => {
+        if (!cancelled) setExternalViewError(e.message)
+      })
+      .finally(() => {
+        if (!cancelled) setExternalViewBusy(false)
+      })
+
+    return () => { cancelled = true }
+  }, [detailProvider?.id, detailProvider?.external_view?.available])
+
   const readinessText = (provider?: MemoryProviderInfo) => {
     if (!provider) return t('memory.notConfigured')
     if (provider.readiness === 'ready') return t('memory.verified')
@@ -382,12 +1592,86 @@ function MemoryProvidersPanel({
     return t('memory.missingConfig')
   }
 
-  const missingConfig = (provider?: MemoryProviderInfo) => {
+  const fieldHasValue = (
+    provider: MemoryProviderInfo,
+    field: MemoryProviderInfo['config_fields'][number],
+    modeId = ''
+  ) => {
+    if (field.name === 'mode' && modeId) return true
+    const draftValue = (configDraft[field.name] || '').trim()
+    const current = provider.config_values?.[field.name]
+    return !!draftValue || !!current?.configured
+  }
+
+  const validateRequiredConfig = (provider?: MemoryProviderInfo, modeId = '') => {
     if (!provider) return []
-    return [
-      ...(provider.missing_fields || []),
-      ...(provider.missing_any || []).map(group => group.join(' / ')),
-    ]
+    const fieldsByName = new Map(provider.config_fields.map(field => [field.name, field]))
+    const configMode = provider.config_modes?.find(mode => mode.id === modeId)
+    const requiredFields = configMode
+      ? configMode.required_fields
+      : provider.config_fields.filter(field => field.requirement === 'required').map(field => field.name)
+    const requiredGroups = configMode
+      ? configMode.required_any
+      : provider.config_fields
+        .filter(field => field.requirement === 'required_any' && field.required_group?.length)
+        .map(field => field.required_group)
+    const missingRequired = requiredFields
+      .map(name => fieldsByName.get(name))
+      .filter((field): field is MemoryProviderInfo['config_fields'][number] => !!field)
+      .filter(field => !fieldHasValue(provider, field, modeId))
+      .filter(field => !modeFieldNames.has(field.name))
+      .map(field => field.label || field.name)
+    const groupKeys = new Set<string>()
+    const missingGroups: string[] = []
+    for (const group of requiredGroups) {
+      if (!group?.length) continue
+      const key = group.join('|')
+      if (groupKeys.has(key)) continue
+      groupKeys.add(key)
+      const satisfied = group.some(name => {
+        const groupField = fieldsByName.get(name)
+        return groupField ? fieldHasValue(provider, groupField, modeId) : false
+      })
+      if (!satisfied) {
+        const label = group
+          .filter(name => !modeFieldNames.has(name))
+          .map(name => fieldsByName.get(name)?.label || name)
+          .join(' / ')
+        if (label) missingGroups.push(label)
+      }
+    }
+    return [...missingRequired, ...missingGroups]
+  }
+
+  const requiredConfigIssues = validateRequiredConfig(detailProvider, selectedMode)
+  const statusOutput = statusResult?.status_command.output || statusResult?.status_command.error || t('memory.noStatusOutput')
+  const activeHealth = statusResult?.health || detailProvider?.health
+
+  const checkedAtText = (value?: string) => {
+    if (!value) return t('memory.statusNotRun')
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return value
+    return parsed.toLocaleString()
+  }
+
+  const healthColor = (ok: boolean | null | undefined) => {
+    if (ok === true) return 'var(--hud-success)'
+    if (ok === false) return 'var(--hud-warning)'
+    return 'var(--hud-text-dim)'
+  }
+
+  const healthText = (ok: boolean | null | undefined) => {
+    if (ok === true) return t('memory.ok')
+    if (ok === false) return t('memory.missingConfig')
+    return t('memory.statusNotRun')
+  }
+
+  const fieldIsRequired = (field: MemoryProviderInfo['config_fields'][number]) => {
+    if (activeMode) {
+      return activeMode.required_fields.includes(field.name)
+        || activeMode.required_any.some(group => group.includes(field.name))
+    }
+    return field.requirement !== 'optional'
   }
 
   const submit = async (provider: string) => {
@@ -406,11 +1690,18 @@ function MemoryProvidersPanel({
 
   const saveConfig = async () => {
     if (!detailProvider) return
+    const issues = validateRequiredConfig(detailProvider, selectedMode)
+    if (issues.length) {
+      setError(`${t('memory.requiredConfigMissing')}: ${issues.join(', ')}`)
+      setNotice('')
+      return
+    }
     const fields: Record<string, string> = {}
-    for (const field of detailProvider.config_fields || []) {
+    for (const field of visibleConfigFields) {
       const value = (configDraft[field.name] || '').trim()
       if (value) fields[field.name] = value
     }
+    if (selectedMode && modeFieldNames.has('mode')) fields.mode = selectedMode
     if (!Object.keys(fields).length) {
       setError(t('memory.noConfigValues'))
       setNotice('')
@@ -420,7 +1711,7 @@ function MemoryProvidersPanel({
     setError('')
     setNotice('')
     try {
-      await saveMemoryProviderConfig(detailProvider.id, fields)
+      await saveMemoryProviderConfig(detailProvider.id, fields, selectedMode)
       setConfigDraft(prev => {
         const next = { ...prev }
         for (const field of detailProvider.config_fields || []) {
@@ -453,223 +1744,416 @@ function MemoryProvidersPanel({
     }
   }
 
+  const refreshExternalView = async () => {
+    if (!detailProvider?.external_view?.available) return
+    setExternalViewBusy(true)
+    setExternalViewError('')
+    try {
+      const result = await fetchProviderExternalView(detailProvider.id)
+      setExternalView(result)
+    } catch (e: any) {
+      setExternalViewError(e.message)
+    } finally {
+      setExternalViewBusy(false)
+    }
+  }
+
   return (
-    <Panel title={t('memory.providers')} className="col-span-full">
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-3">
-        <div className="space-y-2 text-[13px]">
-          <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
-            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.builtin')}
-            </div>
-            <div style={{ color: 'var(--hud-success)' }}>{t('memory.alwaysOn')}</div>
-            <div className="font-mono text-[12px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {(data?.builtin.sources || ['MEMORY.md', 'USER.md']).join(' + ')}
-            </div>
+    <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+        <div>
+          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {externalMemoryTitle}
           </div>
-          <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
-            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.externalProvider')}
-            </div>
-            <div style={{ color: activeProvider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
-              {activeProvider ? activeProvider.label : t('memory.noneExternal')}
-            </div>
-            <div className="text-[12px] mt-1" style={{ color: activeProvider?.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
-              {activeProvider ? readinessText(activeProvider) : t('memory.notConfigured')}
-            </div>
-            <div className="font-mono text-[12px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
-              {activeProvider ? activeProvider.config_command : data?.setup_command || 'hermes memory setup'}
-            </div>
-            {active && (
-              <button
-                onClick={() => submit('')}
-                disabled={busy}
-                className="mt-2 px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
-                type="button"
-              >
-                {busy ? '...' : t('memory.turnOffExternal')}
-              </button>
-            )}
+          <div className="text-[13px]" style={{ color: activeProvider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
+            {activeProvider ? readinessText(activeProvider) : t('memory.notConfigured')}
+          </div>
+          <div className="font-mono text-[11px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
+            {activeProvider ? activeProvider.config_command : data?.setup_command || 'hermes memory setup'}
           </div>
         </div>
+        {active && (
+          <button
+            onClick={() => submit('')}
+            disabled={busy}
+            className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.turnOffExternal')}
+          </button>
+        )}
+      </div>
 
-        <div>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {providers.map(provider => {
-              const isSelected = selected === provider.id
-              const isActive = provider.active
-              return (
-                <button
-                  key={provider.id}
-                  onClick={() => setSelected(provider.id)}
-                  disabled={busy}
-                  className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
-                  style={{
-                    background: isActive || isSelected ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
-                    color: isActive || isSelected ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
-                    border: '1px solid var(--hud-border)',
-                  }}
-                  type="button"
-                  title={readinessText(provider)}
-                >
-                  {provider.label}{provider.configured ? ' *' : ''}
-                </button>
-              )
-            })}
-          </div>
+      <div className="font-mono text-[11px] mb-3" style={{ color: 'var(--hud-text-dim)' }}>
+        {data?.status_command || 'hermes memory status'}
+      </div>
 
-          <div className="p-3 text-[13px]" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>
-                {detailProvider?.label || t('memory.selectProvider')}
-              </span>
-              {detailProvider && (
-                <span style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.storage')}: {detailProvider.storage}
-                </span>
-              )}
-              {detailProvider && (
-                <span style={{ color: detailProvider.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
-                  {readinessText(detailProvider)}
-                </span>
-              )}
-            </div>
-            <div style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.oneExternalOnly')}
-            </div>
-            <div className="font-mono text-[12px] mt-2" style={{ color: 'var(--hud-text-dim)' }}>
-              {detailProvider?.config_command || data?.setup_command || 'hermes memory setup'}
-            </div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {providers.map(provider => {
+          const isSelected = selected === provider.id
+          const isActive = provider.active
+          return (
+            <button
+              key={provider.id}
+              onClick={() => setSelected(provider.id)}
+              disabled={busy}
+              className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+              style={{
+                background: isActive || isSelected ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
+                color: isActive || isSelected ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
+                border: '1px solid var(--hud-border)',
+              }}
+              type="button"
+              title={readinessText(provider)}
+            >
+              {provider.label}{provider.configured ? ' *' : ''}
+            </button>
+          )
+        })}
+      </div>
 
-            {detailProvider && (
-              <div className="mt-3">
+      <div className="text-[13px]">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>
+            {detailProvider?.label || t('memory.selectProvider')}
+          </span>
+          {detailProvider && (
+            <span style={{ color: 'var(--hud-text-dim)' }}>
+              {t('memory.storage')}: {detailProvider.storage}
+            </span>
+          )}
+          {detailProvider && (
+            <span style={{ color: detailProvider.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
+              {readinessText(detailProvider)}
+            </span>
+          )}
+        </div>
+        <div style={{ color: 'var(--hud-text-dim)' }}>
+          {t('memory.oneExternalOnly')}
+        </div>
+        <div className="font-mono text-[12px] mt-2" style={{ color: 'var(--hud-text-dim)' }}>
+          {detailProvider?.config_command || data?.setup_command || 'hermes memory setup'}
+        </div>
+
+        {detailProvider && (
+          <div className="mt-3 space-y-3">
+            <CapabilityMatrix
+              capabilities={detailProvider.capabilities}
+              schemaSource={detailProvider.schema_source}
+            />
+
+            <ExternalMemoryViewPanel
+              provider={detailProvider}
+              externalView={externalView}
+              busy={externalViewBusy}
+              error={externalViewError}
+              onRefresh={refreshExternalView}
+            />
+
+            {!!detailProvider.config_modes?.length && (
+              <div>
                 <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.configureProvider')}
-                </div>
-                {detailProvider.config_fields?.length ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {detailProvider.config_fields.map(field => {
-                      const current = detailProvider.config_values?.[field.name]
-                      return (
-                        <label key={field.name} className="block">
-                          <span className="block text-[11px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-                            {field.label}
-                            {field.secret && current?.configured ? ` · ${t('memory.secretConfigured')}` : ''}
-                          </span>
-                          <input
-                            value={configDraft[field.name] ?? ''}
-                            type={field.secret ? 'password' : 'text'}
-                            onChange={e => setConfigDraft(prev => ({ ...prev, [field.name]: e.target.value }))}
-                            placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
-                            className="w-full text-[12px] px-2 py-1.5 outline-none"
-                            style={{
-                              background: 'var(--hud-bg-deep)',
-                              border: '1px solid var(--hud-border)',
-                              color: 'var(--hud-text)',
-                            }}
-                          />
-                          <span className="block text-[10px] mt-0.5 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
-                            {current?.source || field.path || field.storage}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
-                    {t('memory.noConfigFields')}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!!missingConfig(detailProvider).length && (
-              <div className="mt-3 text-[12px]" style={{ color: 'var(--hud-warning)' }}>
-                {t('memory.missingConfig')}: {missingConfig(detailProvider).join(', ')}
-              </div>
-            )}
-
-            {!!detailProvider?.checks?.length && (
-              <div className="mt-3">
-                <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.dependencyChecks')}
+                  {t('memory.configMode')}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {detailProvider.checks.map(check => (
+                  {detailProvider.config_modes.map(mode => {
+                    const selectedConfigMode = selectedMode === mode.id
+                    return (
+                      <button
+                        key={mode.id}
+                        onClick={() => setSelectedModes(prev => ({ ...prev, [detailProvider.id]: mode.id }))}
+                        disabled={busy}
+                        className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+                        style={{
+                          background: selectedConfigMode ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
+                          color: selectedConfigMode ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
+                          border: '1px solid var(--hud-border)',
+                        }}
+                        type="button"
+                        title={mode.description || mode.storage}
+                      >
+                        {mode.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+                {t('memory.minimumConfig')}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[...minimumConfigFields, ...minimumConfigGroups].length ? (
+                  [...minimumConfigFields, ...minimumConfigGroups].map(item => (
                     <span
-                      key={`${check.kind}:${check.name}`}
+                      key={item}
                       className="text-[11px] px-1.5 py-0.5"
+                      style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-warning)' }}
+                    >
+                      {item} {t('memory.requiredMarker')}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+                    {t('memory.noMinimumConfig')}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+                {t('memory.configureProvider')}
+              </div>
+              {visibleConfigFields.length ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {visibleConfigFields.map(field => {
+                    const current = detailProvider.config_values?.[field.name]
+                    return (
+                      <label key={field.name} className="block">
+                        <span className="flex flex-wrap items-center gap-1.5 text-[11px] mb-1">
+                          <span style={{ color: 'var(--hud-text-dim)' }}>
+                            {field.label}
+                            {fieldIsRequired(field) && (
+                              <span style={{ color: 'var(--hud-error, #f44)' }}> {t('memory.requiredMarker')}</span>
+                            )}
+                          </span>
+                          {field.secret && current?.configured && (
+                            <span style={{ color: 'var(--hud-success)' }}>{t('memory.secretConfigured')}</span>
+                          )}
+                        </span>
+                        <input
+                          value={configDraft[field.name] ?? ''}
+                          type={field.secret ? 'password' : 'text'}
+                          onChange={e => setConfigDraft(prev => ({ ...prev, [field.name]: e.target.value }))}
+                          placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
+                          className="w-full text-[12px] px-2 py-1.5 outline-none"
+                          style={{
+                            background: 'var(--hud-bg-deep)',
+                            border: '1px solid var(--hud-border)',
+                            color: 'var(--hud-text)',
+                          }}
+                        />
+                        <span className="block text-[10px] mt-0.5 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+                          {current?.source || field.path || field.storage}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+                  {t('memory.noConfigFields')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!!requiredConfigIssues.length && (
+          <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error, #f44)' }}>
+            {t('memory.requiredConfigMissing')}: {requiredConfigIssues.join(', ')}
+          </div>
+        )}
+
+        {activeHealth && (
+          <div className="mt-3">
+            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+              {t('memory.healthChecks')}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthConfig')}</div>
+                <div className="text-[12px]" style={{ color: healthColor(activeHealth.required_config.ok) }}>
+                  {healthText(activeHealth.required_config.ok)}
+                </div>
+              </div>
+              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthDependencies')}</div>
+                <div className="text-[12px]" style={{ color: healthColor(activeHealth.dependencies.ok) }}>
+                  {healthText(activeHealth.dependencies.ok)}
+                </div>
+              </div>
+              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
+                <div className="text-[12px]" style={{ color: activeHealth.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
+                  {activeHealth.active ? t('memory.activeState') : t('memory.inactiveState')}
+                </div>
+              </div>
+              <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+                <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthStatus')}</div>
+                <div className="text-[12px]" style={{ color: healthColor(activeHealth.status_command?.ok) }}>
+                  {healthText(activeHealth.status_command?.ok)}
+                </div>
+              </div>
+            </div>
+            {!!activeHealth.config_files.length && (
+              <div className="mt-2">
+                <div className="text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+                  {t('memory.healthConfigFiles')}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeHealth.config_files.map(file => (
+                    <span
+                      key={file.path}
+                      className="text-[11px] px-1.5 py-0.5 font-mono"
                       style={{
                         border: '1px solid var(--hud-border)',
-                        color: check.ok ? 'var(--hud-success)' : 'var(--hud-warning)',
+                        color: file.exists ? 'var(--hud-success)' : 'var(--hud-text-dim)',
                       }}
                     >
-                      {check.name}: {check.ok ? t('memory.present') : t('memory.missingDependency')}
+                      {file.path}: {file.exists ? t('memory.present') : t('memory.fileMissing')}
                     </span>
                   ))}
                 </div>
               </div>
             )}
-
-            {!!detailProvider?.notes?.length && (
-              <div className="mt-3 text-[12px] font-mono" style={{ color: 'var(--hud-text-dim)' }}>
-                {detailProvider.notes.join(' · ')}
-              </div>
-            )}
-
-            <div className="flex flex-wrap justify-end gap-2 mt-3">
-              <button
-                onClick={saveConfig}
-                disabled={busy || !detailProvider || !detailProvider.config_fields?.length}
-                className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
-                type="button"
-              >
-                {busy ? '...' : t('memory.saveProviderConfig')}
-              </button>
-              <button
-                onClick={runStatusCheck}
-                disabled={busy || !detailProvider}
-                className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
-                type="button"
-              >
-                {busy ? '...' : t('memory.checkStatus')}
-              </button>
-              <button
-                onClick={() => detailProvider && submit(detailProvider.id)}
-                disabled={busy || !detailProvider || detailProvider.id === active}
-                className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-                style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
-                type="button"
-              >
-                {busy ? '...' : detailProvider?.id === active ? t('memory.activeProvider') : t('memory.setProvider')}
-              </button>
+            <div className="text-[10px] mt-2" style={{ color: 'var(--hud-text-dim)' }}>
+              {t('memory.lastChecked')}: {checkedAtText(activeHealth.checked_at)}
             </div>
-            {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
-            {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+          </div>
+        )}
 
-            {statusResult && (
-              <div className="mt-3">
-                <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-                  {t('memory.statusOutput')}
-                </div>
-                <pre
-                  className="text-[11px] whitespace-pre-wrap p-2 max-h-32 overflow-auto"
+        {!!detailProvider?.checks?.length && (
+          <div className="mt-3">
+            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+              {t('memory.dependencyChecks')}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {detailProvider.checks.map(check => (
+                <span
+                  key={`${check.kind}:${check.name}`}
+                  className="text-[11px] px-1.5 py-0.5"
                   style={{
-                    background: 'var(--hud-bg-deep)',
                     border: '1px solid var(--hud-border)',
-                    color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
+                    color: check.ok ? 'var(--hud-success)' : 'var(--hud-warning)',
                   }}
                 >
-                  {statusResult.status_command.output || statusResult.status_command.error || t('memory.noStatusOutput')}
-                </pre>
+                  {check.name}: {check.ok ? t('memory.present') : t('memory.missingDependency')}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!!detailProvider?.notes?.length && (
+          <div className="mt-3 text-[12px] font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+            {detailProvider.notes.join(' · ')}
+          </div>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2 mt-3">
+          <button
+            onClick={saveConfig}
+            disabled={busy || !detailProvider || !detailProvider.config_fields?.length || !!requiredConfigIssues.length}
+            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.saveProviderConfig')}
+          </button>
+          <button
+            onClick={runStatusCheck}
+            disabled={busy || !detailProvider}
+            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            type="button"
+          >
+            {busy ? '...' : t('memory.checkStatus')}
+          </button>
+          <button
+            onClick={() => detailProvider && submit(detailProvider.id)}
+            disabled={busy || !detailProvider || detailProvider.id === active}
+            className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+            style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg-deep)', border: 'none' }}
+            type="button"
+          >
+            {busy ? '...' : detailProvider?.id === active ? t('memory.activeProvider') : t('memory.setProvider')}
+          </button>
+        </div>
+        {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
+        {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
+
+        {statusResult && (
+          <div className="mt-3">
+            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+              {t('memory.statusOutput')}
+            </div>
+            <pre
+              role="button"
+              tabIndex={0}
+              aria-label={t('memory.statusOutput')}
+              onClick={() => setStatusModalOpen(true)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setStatusModalOpen(true)
+                }
+              }}
+              className="text-[11px] whitespace-pre-wrap p-2 overflow-auto cursor-pointer"
+              style={{
+                background: 'var(--hud-bg-deep)',
+                border: '1px solid var(--hud-border)',
+                color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
+                maxHeight: '280px',
+                minHeight: '180px',
+              }}
+            >
+              {statusOutput}
+            </pre>
+          </div>
+        )}
+      </div>
+      {statusModalOpen && statusResult && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0, 0, 0, 0.62)' }}
+        >
+          <div
+            className="w-full max-w-5xl"
+            style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}
+          >
+            <div
+              className="flex items-center justify-between gap-2 px-3 py-2"
+              style={{ borderBottom: '1px solid var(--hud-border)' }}
+            >
+              <div>
+                <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+                  {t('memory.statusOutput')}
+                </div>
+                <div className="text-[13px]" style={{ color: statusResult.status_command.ok ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
+                  {statusResult.status_command.command}
+                </div>
               </div>
-            )}
+              <button
+                onClick={() => setStatusModalOpen(false)}
+                className="px-2 py-1 text-[12px] cursor-pointer"
+                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                type="button"
+              >
+                {t('memory.closeStatusModal')}
+              </button>
+            </div>
+            <pre
+              className="text-[12px] whitespace-pre-wrap p-3 overflow-auto"
+              style={{
+                background: 'var(--hud-bg-deep)',
+                color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
+                maxHeight: '70vh',
+                minHeight: '50vh',
+              }}
+            >
+              {statusOutput}
+            </pre>
           </div>
         </div>
-      </div>
-    </Panel>
+      )}
+    </div>
   )
 }
 
@@ -677,33 +2161,63 @@ export default function MemoryPanel() {
   const { t } = useTranslation()
   const { data, isLoading, mutate } = useApi('/memory', 30000)
   const { data: providerData, mutate: mutateProviders } = useApi<MemoryProvidersState>('/memory/providers', 30000)
+  const { data: filesData, mutate: mutateFiles } = useApi<MemoryFilesState>('/memory/files', 30000)
+  const { data: settingsData, mutate: mutateSettings } = useApi<MemorySettingsState>('/memory/settings', 30000)
+  const { data: pendingData, mutate: mutatePending } = useApi<MemoryPendingState>('/memory/pending', 30000)
 
   if (isLoading && !data) {
-    return <Panel title={t('memory.title')} className="col-span-full"><div className="glow text-[13px] animate-pulse">{t('memory.loading')}</div></Panel>
+    return <Panel title={t('memory.title')}><div className="glow text-[13px] animate-pulse">{t('memory.loading')}</div></Panel>
   }
 
   const { memory, user } = data
+  const files = filesData?.files
+  const memoryFile = files?.memory
+  const userFile = files?.user
+  const refreshMemoryState = () => {
+    mutate()
+    mutateFiles()
+    mutateSettings()
+    mutatePending()
+  }
 
   return (
     <>
-      <MemoryProvidersPanel data={providerData} onMutate={mutateProviders} />
+      <Panel title={t('memory.title')}>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          <BuiltinMemoryFileCard
+            file={memoryFile}
+            title={t('memory.builtinMemoryTitle')}
+            onSaved={refreshMemoryState}
+          >
+            <MemoryEntries entries={memory?.entries || files?.memory?.entries || []} target="memory" onMutate={refreshMemoryState} />
+            <AddEntryForm target="memory" onMutate={refreshMemoryState} />
+          </BuiltinMemoryFileCard>
 
-      <Panel title={t('memory.title')} className="col-span-1">
-        <CapacityBar value={memory?.total_chars || 0} max={memory?.max_chars || 2200} label={t('memory.capacity')} />
-        <div className="text-[13px] my-2" style={{ color: 'var(--hud-text-dim)' }}>
-          {memory?.entry_count || 0} {t('memory.entries')} · {Object.entries(memory?.count_by_category || {}).map(([k,v]) => `${k}(${v})`).join(' ')}
+          <MemoryProvidersPanel data={providerData} onMutate={mutateProviders} />
         </div>
-        <MemoryEntries entries={memory?.entries || []} target="memory" onMutate={mutate} />
-        <AddEntryForm target="memory" onMutate={mutate} />
+        <MemoryHistoryPanel onMutate={refreshMemoryState} />
+        <MemoryGovernancePanel
+          settings={settingsData || filesData?.settings}
+          pending={pendingData}
+          onSettingsSaved={() => {
+            mutateSettings()
+            mutateFiles()
+          }}
+          onPendingMutate={refreshMemoryState}
+        />
       </Panel>
 
-      <Panel title={t('memory.userProfile')} className="col-span-1">
-        <CapacityBar value={user?.total_chars || 0} max={user?.max_chars || 1375} label={t('memory.capacity')} />
-        <div className="text-[13px] my-2" style={{ color: 'var(--hud-text-dim)' }}>
-          {user?.entry_count || 0} {t('memory.entries')}
+      <Panel title={t('memory.userProfile')}>
+        <div className="grid grid-cols-1 gap-3">
+          <BuiltinMemoryFileCard
+            file={userFile}
+            title={t('memory.userProfile')}
+            onSaved={refreshMemoryState}
+          >
+            <MemoryEntries entries={user?.entries || files?.user?.entries || []} target="user" onMutate={refreshMemoryState} columns={2} />
+            <AddEntryForm target="user" onMutate={refreshMemoryState} />
+          </BuiltinMemoryFileCard>
         </div>
-        <MemoryEntries entries={user?.entries || []} target="user" onMutate={mutate} />
-        <AddEntryForm target="user" onMutate={mutate} />
       </Panel>
     </>
   )

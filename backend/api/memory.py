@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import fcntl
 import importlib.util
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+from urllib.parse import quote
 
 import yaml
 from fastapi import APIRouter, HTTPException
@@ -19,11 +21,12 @@ from pydantic import BaseModel, Field
 from backend.collectors.memory import collect_memory
 from backend.collectors.config import collect_config
 from backend.collectors.utils import default_hermes_dir, load_yaml
+from backend.services import memory_service
 from .serialize import to_dict
 
 router = APIRouter()
 
-ENTRY_DELIMITER = "\n§\n"
+ENTRY_DELIMITER = memory_service.ENTRY_DELIMITER
 HOST_KEY = "hermes"
 
 MEMORY_PROVIDER_OPTIONS = {
@@ -76,6 +79,28 @@ MEMORY_PROVIDER_OPTIONS = {
                 "help": "AI peer identity for this Hermes profile.",
             },
         ],
+        "modes": [
+            {
+                "id": "cloud",
+                "label": "Cloud",
+                "storage": "cloud",
+                "description": "Honcho Cloud using an app.honcho.dev API key.",
+                "fields": ["apiKey", "peerName", "workspace", "aiPeer"],
+                "required_fields": ["apiKey", "peerName", "workspace", "aiPeer"],
+                "required_any": [],
+                "optional_fields": [],
+            },
+            {
+                "id": "self_hosted",
+                "label": "Self-hosted",
+                "storage": "self-hosted",
+                "description": "Self-hosted Honcho using a base URL.",
+                "fields": ["baseUrl", "peerName", "workspace", "aiPeer"],
+                "required_fields": ["baseUrl", "peerName", "workspace", "aiPeer"],
+                "required_any": [],
+                "optional_fields": [],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider honcho",
     },
@@ -124,6 +149,29 @@ MEMORY_PROVIDER_OPTIONS = {
                 "storage": "env",
                 "secret": False,
                 "help": "Optional local/trusted-mode user.",
+            },
+        ],
+        "modes": [
+            {
+                "id": "self_hosted",
+                "label": "Self-hosted",
+                "storage": "self-hosted",
+                "description": "Running OpenViking server endpoint.",
+                "fields": [
+                    "OPENVIKING_ENDPOINT",
+                    "OPENVIKING_API_KEY",
+                    "OPENVIKING_AGENT",
+                    "OPENVIKING_ACCOUNT",
+                    "OPENVIKING_USER",
+                ],
+                "required_fields": ["OPENVIKING_ENDPOINT"],
+                "required_any": [],
+                "optional_fields": [
+                    "OPENVIKING_API_KEY",
+                    "OPENVIKING_AGENT",
+                    "OPENVIKING_ACCOUNT",
+                    "OPENVIKING_USER",
+                ],
             },
         ],
         "setup_command": "hermes memory setup",
@@ -177,6 +225,28 @@ MEMORY_PROVIDER_OPTIONS = {
                 "help": "true or false; platform mode only.",
             },
         ],
+        "modes": [
+            {
+                "id": "platform",
+                "label": "Cloud Platform",
+                "storage": "cloud",
+                "description": "Mem0 Platform using an API key.",
+                "fields": ["MEM0_API_KEY", "mode", "user_id", "agent_id", "rerank"],
+                "required_fields": ["MEM0_API_KEY"],
+                "required_any": [],
+                "optional_fields": ["user_id", "agent_id", "rerank"],
+            },
+            {
+                "id": "oss",
+                "label": "OSS / self-hosted",
+                "storage": "self-hosted",
+                "description": "Mem0 OSS configured through local settings.",
+                "fields": ["mode", "user_id", "agent_id"],
+                "required_fields": ["mode"],
+                "required_any": [],
+                "optional_fields": ["user_id", "agent_id"],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider mem0",
     },
@@ -228,6 +298,28 @@ MEMORY_PROVIDER_OPTIONS = {
                 "help": "hybrid, context, or tools.",
             },
         ],
+        "modes": [
+            {
+                "id": "cloud",
+                "label": "Cloud",
+                "storage": "cloud",
+                "description": "Hindsight Cloud using an API key.",
+                "fields": ["HINDSIGHT_API_KEY", "mode", "bank_id", "recall_budget", "memory_mode"],
+                "required_fields": ["HINDSIGHT_API_KEY"],
+                "required_any": [],
+                "optional_fields": ["bank_id", "recall_budget", "memory_mode"],
+            },
+            {
+                "id": "local",
+                "label": "Local",
+                "storage": "local",
+                "description": "Local Hindsight memory bank.",
+                "fields": ["mode", "bank_id", "recall_budget", "memory_mode"],
+                "required_fields": ["mode"],
+                "required_any": [],
+                "optional_fields": ["bank_id", "recall_budget", "memory_mode"],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider hindsight",
     },
@@ -263,6 +355,18 @@ MEMORY_PROVIDER_OPTIONS = {
                 "help": "0.0 to 1.0.",
             },
         ],
+        "modes": [
+            {
+                "id": "local",
+                "label": "Local",
+                "storage": "local",
+                "description": "Local SQLite-backed memory store.",
+                "fields": ["db_path", "auto_extract", "default_trust"],
+                "required_fields": [],
+                "required_any": [],
+                "optional_fields": ["db_path", "auto_extract", "default_trust"],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider holographic",
     },
@@ -282,6 +386,18 @@ MEMORY_PROVIDER_OPTIONS = {
                 "help": "RetainDB account key.",
             },
         ],
+        "modes": [
+            {
+                "id": "cloud",
+                "label": "Cloud",
+                "storage": "cloud",
+                "description": "RetainDB Cloud using an API key.",
+                "fields": ["RETAINDB_API_KEY"],
+                "required_fields": ["RETAINDB_API_KEY"],
+                "required_any": [],
+                "optional_fields": [],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider retaindb",
     },
@@ -292,6 +408,18 @@ MEMORY_PROVIDER_OPTIONS = {
         "required_fields": [],
         "config_files": ["byterover/"],
         "fields": [],
+        "modes": [
+            {
+                "id": "local",
+                "label": "Local / CLI",
+                "storage": "local/cloud",
+                "description": "ByteRover configuration is handled by the brv CLI.",
+                "fields": [],
+                "required_fields": [],
+                "required_any": [],
+                "optional_fields": [],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider byterover",
     },
@@ -342,6 +470,29 @@ MEMORY_PROVIDER_OPTIONS = {
                 "help": "hybrid, memories, or documents.",
             },
         ],
+        "modes": [
+            {
+                "id": "cloud",
+                "label": "Cloud",
+                "storage": "cloud",
+                "description": "Supermemory Cloud using an API key.",
+                "fields": [
+                    "SUPERMEMORY_API_KEY",
+                    "SUPERMEMORY_CONTAINER_TAG",
+                    "container_tag",
+                    "max_recall_results",
+                    "search_mode",
+                ],
+                "required_fields": ["SUPERMEMORY_API_KEY"],
+                "required_any": [],
+                "optional_fields": [
+                    "SUPERMEMORY_CONTAINER_TAG",
+                    "container_tag",
+                    "max_recall_results",
+                    "search_mode",
+                ],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider supermemory",
     },
@@ -355,6 +506,18 @@ MEMORY_PROVIDER_OPTIONS = {
         "required_fields": [],
         "config_files": [],
         "fields": [],
+        "modes": [
+            {
+                "id": "cloud",
+                "label": "Cloud / bridge",
+                "storage": "cloud",
+                "description": "Memori bridge configuration is handled by hermes-memori.",
+                "fields": [],
+                "required_fields": [],
+                "required_any": [],
+                "optional_fields": [],
+            },
+        ],
         "setup_command": "hermes memory setup",
         "config_command": "hermes config set memory.provider memori",
         "notes": [
@@ -363,6 +526,127 @@ MEMORY_PROVIDER_OPTIONS = {
             "Then run: hermes memory setup",
         ],
     },
+}
+
+MEMORY_PROVIDER_CAPABILITIES = {
+    "honcho": {
+        "external_read": True,
+        "external_read_mode": "provider_specific",
+        "direct_hud_config": True,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": True,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "queue_prefetch", "on_session_end", "tools"],
+    },
+    "openviking": {
+        "external_read": True,
+        "external_read_mode": "provider_specific",
+        "direct_hud_config": True,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": True,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "queue_prefetch", "on_session_end", "tools"],
+    },
+    "mem0": {
+        "external_read": True,
+        "external_read_mode": "provider_specific",
+        "direct_hud_config": True,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": False,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "tools"],
+    },
+    "hindsight": {
+        "external_read": True,
+        "external_read_mode": "provider_specific",
+        "direct_hud_config": True,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": True,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "queue_prefetch", "on_session_end", "tools"],
+    },
+    "holographic": {
+        "external_read": True,
+        "external_read_mode": "local_sqlite",
+        "direct_hud_config": True,
+        "requires_network": False,
+        "local_storage": True,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": True,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "on_session_end", "tools"],
+    },
+    "retaindb": {
+        "external_read": True,
+        "external_read_mode": "provider_specific",
+        "direct_hud_config": True,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": False,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "queue_prefetch", "tools"],
+    },
+    "byterover": {
+        "external_read": False,
+        "external_read_mode": "none",
+        "direct_hud_config": False,
+        "requires_network": False,
+        "local_storage": True,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": False,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "queue_prefetch", "on_pre_compress", "tools"],
+    },
+    "supermemory": {
+        "external_read": True,
+        "external_read_mode": "provider_specific",
+        "direct_hud_config": True,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": True,
+        "supports_session_ingest": True,
+        "supports_manual_write": True,
+        "hooks": ["prefetch", "on_session_end", "tools"],
+    },
+    "memori": {
+        "external_read": False,
+        "external_read_mode": "none",
+        "direct_hud_config": False,
+        "requires_network": True,
+        "local_storage": False,
+        "supports_tools": True,
+        "supports_auto_recall": False,
+        "supports_session_ingest": True,
+        "supports_manual_write": False,
+        "hooks": ["tools"],
+    },
+}
+
+OFFICIAL_SCHEMA_PROVIDERS = {
+    "honcho",
+    "openviking",
+    "mem0",
+    "hindsight",
+    "holographic",
+    "retaindb",
+    "supermemory",
 }
 
 MemoryTarget = Literal["memory", "user"]
@@ -574,9 +858,109 @@ def _dependency_checks(info: dict) -> list[dict]:
     return checks
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _config_file_checks(info: dict) -> list[dict]:
+    checks = []
+    for relative_path in info.get("config_files", []):
+        is_directory = str(relative_path).endswith("/")
+        path = _relative_config_path(str(relative_path).rstrip("/"))
+        checks.append(
+            {
+                "path": relative_path,
+                "kind": "directory" if is_directory else "file",
+                "exists": path.is_dir() if is_directory else path.is_file(),
+            }
+        )
+    return checks
+
+
+def _provider_health(
+    provider: str,
+    *,
+    active: bool,
+    configured: bool,
+    missing_fields: list[str],
+    missing_any: list[list[str]],
+    dependency_checks: list[dict],
+    status_command: dict | None = None,
+) -> dict:
+    dependencies_ok = all(check["ok"] for check in dependency_checks)
+    return {
+        "provider": provider,
+        "active": active,
+        "checked_at": _utc_now_iso(),
+        "config_files": _config_file_checks(MEMORY_PROVIDER_OPTIONS[provider]),
+        "required_config": {
+            "ok": configured,
+            "missing_fields": missing_fields,
+            "missing_any": missing_any,
+        },
+        "dependencies": {
+            "ok": dependencies_ok,
+            "checks": dependency_checks,
+        },
+        "status_command": status_command,
+    }
+
+
+def _field_requirement(info: dict, field_name: str) -> tuple[str, list[str]]:
+    if field_name in info.get("required_fields", []):
+        return "required", []
+    for group in info.get("required_any", []):
+        if field_name in group:
+            return "required_any", group
+    return "optional", []
+
+
+def _mode_specs(info: dict) -> list[dict]:
+    modes = []
+    for mode in info.get("modes", []):
+        modes.append(
+            {
+                "id": mode["id"],
+                "label": mode.get("label", mode["id"]),
+                "storage": mode.get("storage", info.get("storage", "")),
+                "description": mode.get("description", ""),
+                "fields": mode.get("fields", []),
+                "required_fields": mode.get("required_fields", []),
+                "required_any": mode.get("required_any", []),
+                "optional_fields": mode.get("optional_fields", []),
+            }
+        )
+    return modes
+
+
+def _default_mode(info: dict) -> str:
+    modes = _mode_specs(info)
+    return modes[0]["id"] if modes else ""
+
+
+def _mode_by_id(info: dict, mode_id: str) -> dict | None:
+    for mode in _mode_specs(info):
+        if mode["id"] == mode_id:
+            return mode
+    return None
+
+
+def _field_mode_ids(info: dict, field_name: str) -> list[str]:
+    mode_ids = [
+        mode["id"]
+        for mode in _mode_specs(info)
+        if field_name in mode.get("fields", [])
+    ]
+    if mode_ids:
+        return mode_ids
+    modes = _mode_specs(info)
+    return [mode["id"] for mode in modes]
+
+
 def _field_specs(info: dict) -> list[dict]:
     fields = []
     for field in info.get("fields", []):
+        requirement, required_group = _field_requirement(info, field["name"])
         fields.append(
             {
                 "name": field["name"],
@@ -585,6 +969,9 @@ def _field_specs(info: dict) -> list[dict]:
                 "path": field.get("path", field.get("storage", "")),
                 "secret": bool(field.get("secret", False)),
                 "help": field.get("help", ""),
+                "requirement": requirement,
+                "required_group": required_group,
+                "mode_ids": _field_mode_ids(info, field["name"]),
             }
         )
     return fields
@@ -641,12 +1028,147 @@ def _required_state(info: dict, values: dict[str, dict]) -> tuple[bool, list[str
     return not missing_fields and not missing_any, missing_fields, missing_any
 
 
+def _required_state_for_mode(
+    info: dict,
+    values: dict[str, dict],
+    mode_id: str,
+) -> tuple[bool, list[str], list[list[str]]]:
+    mode = _mode_by_id(info, mode_id)
+    if not mode:
+        return _required_state(info, values)
+
+    missing_fields = [
+        name
+        for name in mode.get("required_fields", [])
+        if name != "mode" and not values.get(name, {}).get("configured", False)
+    ]
+    missing_any = [
+        group
+        for group in mode.get("required_any", [])
+        if not any(
+            name == "mode" or values.get(name, {}).get("configured", False)
+            for name in group
+        )
+    ]
+    return not missing_fields and not missing_any, missing_fields, missing_any
+
+
+def _current_config_mode(info: dict, values: dict[str, dict]) -> str:
+    default_mode = _default_mode(info)
+    modes = _mode_specs(info)
+    if not modes:
+        return ""
+
+    configured_mode = values.get("mode", {}).get("value")
+    if isinstance(configured_mode, str) and _mode_by_id(info, configured_mode):
+        return configured_mode
+
+    for field in info.get("fields", []):
+        name = field["name"]
+        if not values.get(name, {}).get("configured", False):
+            continue
+        mode_ids = _field_mode_ids(info, name)
+        if len(mode_ids) == 1:
+            return mode_ids[0]
+
+    return default_mode
+
+
+def _validate_config_mode(info: dict, mode: str) -> str:
+    mode = mode.strip()
+    if not mode:
+        return ""
+    if not _mode_by_id(info, mode):
+        raise HTTPException(400, f"unknown provider config mode: {mode}")
+    return mode
+
+
+def _validate_required_provider_config(
+    provider: str,
+    fields: dict[str, str],
+    mode: str = "",
+) -> None:
+    info = MEMORY_PROVIDER_OPTIONS[provider]
+    mode = _validate_config_mode(info, mode)
+    values = _provider_config_values(provider)
+    for name, raw_value in fields.items():
+        value = str(raw_value).strip()
+        if value and name in values:
+            values[name] = {
+                **values[name],
+                "configured": True,
+                "value": "" if values[name].get("secret") else value,
+            }
+
+    configured, missing_fields, missing_any = (
+        _required_state_for_mode(info, values, mode) if mode else _required_state(info, values)
+    )
+    if configured:
+        return
+
+    missing = [*missing_fields, *[" / ".join(group) for group in missing_any]]
+    raise HTTPException(
+        400,
+        "missing required provider config: " + ", ".join(missing),
+    )
+
+
 def _active_memory_provider(config: dict) -> str:
     memory_cfg = config.get("memory", {})
     if not isinstance(memory_cfg, dict):
         return ""
     provider = str(memory_cfg.get("provider") or "").strip()
     return provider if provider in MEMORY_PROVIDER_OPTIONS else ""
+
+
+def _provider_capabilities(provider: str) -> dict:
+    return {
+        "external_read": False,
+        "external_read_mode": "none",
+        "direct_hud_config": bool(MEMORY_PROVIDER_OPTIONS[provider].get("fields")),
+        "requires_network": MEMORY_PROVIDER_OPTIONS[provider].get("storage") not in {"local"},
+        "local_storage": False,
+        "supports_tools": False,
+        "supports_auto_recall": False,
+        "supports_session_ingest": False,
+        "supports_manual_write": False,
+        "hooks": [],
+        **MEMORY_PROVIDER_CAPABILITIES.get(provider, {}),
+    }
+
+
+def _provider_schema_source(provider: str) -> dict:
+    if provider in OFFICIAL_SCHEMA_PROVIDERS:
+        return {
+            "kind": "official_schema",
+            "method": "get_config_schema",
+            "fallback": False,
+            "source": "official memory provider plugin",
+        }
+    return {
+        "kind": "hud_metadata",
+        "method": "",
+        "fallback": True,
+        "source": "HUD static metadata",
+    }
+
+
+def _provider_external_view_info(provider: str) -> dict:
+    if provider == "holographic":
+        return {
+            "available": True,
+            "readonly": True,
+            "endpoint": "/api/memory/providers/holographic/external",
+            "view_type": "facts",
+            "reason": "",
+        }
+    return {
+        "available": False,
+        "readonly": True,
+        "endpoint": "",
+        "view_type": "",
+        "reason": "provider_specific_api_not_configured",
+    }
 
 
 def _memory_provider_payload() -> dict:
@@ -658,6 +1180,7 @@ def _memory_provider_payload() -> dict:
         checks = _dependency_checks(info)
         dependency_ok = all(check["ok"] for check in checks)
         active = key == active_provider
+        current_mode = _current_config_mode(info, config_values)
         if not configured:
             readiness = "selected" if active else "missing_config"
         elif active and dependency_ok:
@@ -676,8 +1199,22 @@ def _memory_provider_payload() -> dict:
             "missing_fields": missing_fields,
             "missing_any": missing_any,
             "checks": checks,
+            "config_modes": _mode_specs(info),
+            "default_mode": _default_mode(info),
+            "current_mode": current_mode,
             "config_fields": _field_specs(info),
             "config_values": config_values,
+            "capabilities": _provider_capabilities(key),
+            "schema_source": _provider_schema_source(key),
+            "external_view": _provider_external_view_info(key),
+            "health": _provider_health(
+                key,
+                active=active,
+                configured=configured,
+                missing_fields=missing_fields,
+                missing_any=missing_any,
+                dependency_checks=checks,
+            ),
         }
     return {
         "builtin": {
@@ -694,43 +1231,17 @@ def _memory_provider_payload() -> dict:
 
 def _read_entries(target: MemoryTarget) -> list[str]:
     """Read and split entries from a memory file."""
-    path = _memory_path(target)
-    try:
-        content = path.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return []
-    if not content:
-        return []
-    return [p.strip() for p in content.split("§") if p.strip()]
+    return memory_service.read_entries(target)
 
 
 def _write_entries(target: MemoryTarget, entries: list[str]) -> None:
     """Atomically write entries back to a memory file."""
-    path = _memory_path(target)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = ENTRY_DELIMITER.join(entries) + "\n" if entries else ""
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        os.write(fd, content.encode("utf-8"))
-        os.close(fd)
-        fd = -1
-        os.replace(tmp, str(path))
-    except Exception:
-        if fd >= 0:
-            os.close(fd)
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
+    memory_service.write_entries(target, entries)
 
 
 def _with_lock(target: MemoryTarget, fn):
     """Execute fn while holding the memory file lock."""
-    lock = _lock_path(target)
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.touch(exist_ok=True)
-    with open(lock, "r") as lf:
-        fcntl.flock(lf, fcntl.LOCK_EX)
-        return fn()
+    return memory_service.with_memory_lock(target, fn)
 
 
 @router.get("/memory")
@@ -747,6 +1258,319 @@ async def get_memory():
     }
 
 
+@router.get("/memory/files")
+def get_memory_files():
+    """Built-in MEMORY.md and USER.md state."""
+    return memory_service.memory_files_payload()
+
+
+@router.put("/memory/files/{target}")
+def save_memory_file(target: str, body: MemoryFileBody):
+    """Save a full built-in memory file."""
+    normalized = target.strip().lower()
+    if normalized not in {"memory", "user"}:
+        raise HTTPException(400, "unknown memory file")
+    return memory_service.save_memory_file(normalized, body.content)
+
+
+def _state_db_path() -> Path:
+    return Path(default_hermes_dir()) / "state.db"
+
+
+def _sqlite_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _sqlite_tables(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _column_expr(table: str, columns: set[str], name: str, default: str) -> str:
+    return f"{table}.{name}" if name in columns else default
+
+
+def _history_snippet(content: str, query: str, max_len: int = 220) -> str:
+    text = content.strip()
+    if len(text) <= max_len:
+        return text
+    if query:
+        idx = text.lower().find(query.lower())
+        if idx >= 0:
+            start = max(0, idx - 70)
+            end = min(len(text), idx + len(query) + 130)
+            return ("..." if start else "") + text[start:end].strip() + ("..." if end < len(text) else "")
+    return text[:max_len].rstrip() + "..."
+
+
+def _suggest_memory_target(content: str) -> MemoryTarget:
+    lowered = content.lower()
+    user_markers = (
+        "i prefer",
+        "i like",
+        "my preference",
+        "user prefer",
+        "user prefers",
+        "user likes",
+        "用户",
+        "偏好",
+        "喜欢",
+        "我喜欢",
+        "我希望",
+    )
+    return "user" if any(marker in lowered for marker in user_markers) else "memory"
+
+
+def _memory_history_candidate(row: sqlite3.Row, query: str) -> dict[str, Any]:
+    content = str(row["content"] or "")
+    session_id = str(row["session_id"] or "")
+    title = str(row["title"] or "") or session_id[:8]
+    return {
+        "session_id": session_id,
+        "message_id": str(row["message_id"] or ""),
+        "title": title,
+        "source": str(row["source"] or ""),
+        "started_at": row["started_at"] or 0,
+        "message_count": row["message_count"] or 0,
+        "role": str(row["role"] or ""),
+        "timestamp": row["timestamp"] or 0,
+        "snippet": _history_snippet(content, query),
+        "content": content,
+        "suggested_target": _suggest_memory_target(content),
+    }
+
+
+@router.get("/memory/history")
+def get_memory_history(q: str = "", limit: int = 12):
+    """Search conversation history for memory candidates."""
+    query = q.strip()
+    limit = max(1, min(int(limit or 12), 50))
+    db = _state_db_path()
+    if not db.exists():
+        return {"query": query, "count": 0, "status": "database_missing", "candidates": []}
+
+    try:
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        tables = _sqlite_tables(conn)
+        if not {"sessions", "messages"}.issubset(tables):
+            return {"query": query, "count": 0, "status": "schema_missing", "candidates": []}
+
+        session_columns = _sqlite_columns(conn, "sessions")
+        message_columns = _sqlite_columns(conn, "messages")
+        if not {"session_id", "content"}.issubset(message_columns):
+            return {"query": query, "count": 0, "status": "schema_missing", "candidates": []}
+
+        title_expr = _column_expr("sessions", session_columns, "title", "''")
+        source_expr = _column_expr("sessions", session_columns, "source", "''")
+        started_expr = _column_expr("sessions", session_columns, "started_at", "0")
+        count_expr = _column_expr("sessions", session_columns, "message_count", "0")
+        message_id_expr = _column_expr("messages", message_columns, "id", "CAST(messages.rowid AS TEXT)")
+        role_expr = _column_expr("messages", message_columns, "role", "''")
+        timestamp_expr = _column_expr("messages", message_columns, "timestamp", "0")
+        where = ["LOWER(COALESCE({source}, '')) != 'tool'".format(source=source_expr)]
+        if "parent_session_id" in session_columns:
+            where.append("sessions.parent_session_id IS NULL")
+        if "role" in message_columns:
+            where.append("messages.role IN ('user', 'assistant')")
+        where.append("TRIM(COALESCE(messages.content, '')) != ''")
+        params: list[Any] = []
+        if query:
+            where.append("(messages.content LIKE ? OR {title} LIKE ?)".format(title=title_expr))
+            params.extend([f"%{query}%", f"%{query}%"])
+        params.append(limit)
+        rows = conn.execute(
+            """
+            SELECT sessions.id AS session_id,
+                   {message_id} AS message_id,
+                   {title} AS title,
+                   {source} AS source,
+                   {started_at} AS started_at,
+                   {message_count} AS message_count,
+                   {role} AS role,
+                   {timestamp} AS timestamp,
+                   messages.content AS content
+            FROM messages
+            JOIN sessions ON messages.session_id = sessions.id
+            WHERE {where}
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """.format(
+                message_id=message_id_expr,
+                title=title_expr,
+                source=source_expr,
+                started_at=started_expr,
+                message_count=count_expr,
+                role=role_expr,
+                timestamp=timestamp_expr,
+                where=" AND ".join(where),
+            ),
+            params,
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise HTTPException(500, f"failed to read state.db: {exc}") from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    candidates = [_memory_history_candidate(row, query) for row in rows]
+    return {
+        "query": query,
+        "count": len(candidates),
+        "status": "ok",
+        "candidates": candidates,
+    }
+
+
+@router.post("/memory/history/commit")
+def commit_memory_history_candidate(body: MemoryHistoryCommitBody):
+    """Save a selected history candidate into MEMORY.md or USER.md."""
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(400, "content cannot be empty")
+    metadata = {
+        "source_session_id": body.source_session_id,
+        "source_message_id": body.source_message_id,
+    }
+    if memory_service.memory_settings_payload()["write_approval"]:
+        record = memory_service.stage_pending_memory_write(
+            body.target,
+            content,
+            origin="history_candidate",
+            summary=content[:160],
+            metadata=metadata,
+        )
+        return {
+            "ok": True,
+            "staged": True,
+            "target": body.target,
+            "pending_id": record["id"],
+        }
+
+    result = memory_service.apply_memory_operation("add", body.target, content)
+    return {
+        **result,
+        "staged": False,
+        "target": body.target,
+    }
+
+
+def _provider_export_payload() -> dict[str, Any]:
+    provider_payload = _memory_provider_payload()
+    active_provider = provider_payload["active_provider"]
+    redactions: list[str] = []
+    providers: dict[str, Any] = {}
+
+    for provider_id, provider in provider_payload["providers"].items():
+        exported_fields: dict[str, Any] = {}
+        for field in provider.get("config_fields", []):
+            name = field["name"]
+            current = provider.get("config_values", {}).get(name, {})
+            configured = bool(current.get("configured"))
+            secret = bool(field.get("secret"))
+            exported_fields[name] = {
+                "label": field.get("label", name),
+                "storage": field.get("storage", ""),
+                "source": current.get("source") or field.get("path") or field.get("storage", ""),
+                "configured": configured,
+                "redacted": secret and configured,
+                "value": "" if secret else str(current.get("value") or ""),
+            }
+            if secret and configured:
+                redactions.append(f"{provider_id}.{name}")
+
+        if provider_id == active_provider or any(field["configured"] for field in exported_fields.values()):
+            providers[provider_id] = {
+                "label": provider.get("label", provider_id),
+                "storage": provider.get("storage", ""),
+                "active": bool(provider.get("active")),
+                "configured": bool(provider.get("configured")),
+                "current_mode": provider.get("current_mode", ""),
+                "fields": exported_fields,
+            }
+
+    return {
+        "active_provider": active_provider,
+        "providers": providers,
+        "redactions": redactions,
+    }
+
+
+@router.get("/memory/export")
+def get_memory_export():
+    """Return a redacted memory export payload."""
+    return {
+        "generated_at": _utc_now_iso(),
+        "hermes_home": str(default_hermes_dir()),
+        "files": {
+            target: memory_service.read_memory_file(target)
+            for target in ("memory", "user")
+        },
+        "settings": memory_service.memory_settings_payload(),
+        "provider": _provider_export_payload(),
+    }
+
+
+@router.post("/memory/export")
+def create_memory_export_backup(body: MemoryExportBody | None = None):
+    """Write a redacted memory export backup under Hermes home."""
+    payload = get_memory_export()
+    backup_dir = Path(default_hermes_dir()) / "backups" / "memory"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    path = backup_dir / f"hud-memory-export-{timestamp}.json"
+    try:
+        memory_service.atomic_write_text(
+            path,
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            ".memory_export_",
+        )
+    except OSError as exc:
+        raise HTTPException(500, f"failed to write memory export backup: {exc}") from exc
+    return {
+        "ok": True,
+        "path": str(path),
+        "generated_at": payload["generated_at"],
+        "export": payload,
+    }
+
+
+@router.get("/memory/settings")
+def get_memory_settings():
+    """Memory-related config values from config.yaml."""
+    return memory_service.memory_settings_payload()
+
+
+@router.put("/memory/settings")
+def save_memory_settings(body: MemorySettingsBody):
+    """Update memory settings while preserving unrelated config."""
+    updates = {
+        name: getattr(body, name)
+        for name in body.model_fields_set
+    }
+    return memory_service.save_memory_settings(updates)
+
+
+@router.get("/memory/pending")
+def get_memory_pending():
+    """Pending memory writes staged by memory.write_approval."""
+    return memory_service.pending_payload()
+
+
+@router.post("/memory/pending/{pending_id}/approve")
+def approve_pending_memory(pending_id: str):
+    """Apply a staged memory write and remove it from pending."""
+    return memory_service.apply_pending_memory_write(pending_id)
+
+
+@router.post("/memory/pending/{pending_id}/reject")
+def reject_pending_memory(pending_id: str):
+    """Reject a staged memory write."""
+    return memory_service.reject_pending_memory_write(pending_id)
+
+
 @router.get("/memory/providers")
 def get_memory_providers():
     """External memory provider state.
@@ -754,6 +1578,149 @@ def get_memory_providers():
     Built-in MEMORY.md / USER.md remains active regardless of external provider.
     """
     return _memory_provider_payload()
+
+
+def _holographic_db_path() -> Path:
+    hermes_home = Path(default_hermes_dir())
+    config = _read_config()
+    plugin_cfg = config.get("plugins", {})
+    if isinstance(plugin_cfg, dict):
+        plugin_cfg = plugin_cfg.get("hermes-memory-store", {})
+    if not isinstance(plugin_cfg, dict):
+        plugin_cfg = {}
+
+    configured = plugin_cfg.get("db_path") or ""
+    if not configured:
+        return hermes_home / "memory_store.db"
+
+    expanded = str(configured).replace("${HERMES_HOME}", str(hermes_home))
+    expanded = expanded.replace("$HERMES_HOME", str(hermes_home))
+    path = Path(expanded).expanduser()
+    if not path.is_absolute():
+        return hermes_home / path
+    return path
+
+
+def _split_holographic_tags(raw) -> list[str]:
+    if isinstance(raw, list):
+        return [str(tag).strip() for tag in raw if str(tag).strip()]
+    text = "" if raw is None else str(raw)
+    return [tag.strip() for tag in text.split(",") if tag.strip()]
+
+
+def _empty_holographic_external_view(path: Path, reason: str = "") -> dict:
+    payload = {
+        "provider": "holographic",
+        "available": True,
+        "readonly": True,
+        "db_path": str(path),
+        "summary": {"total": 0, "categories": {}},
+        "items": [],
+    }
+    if reason:
+        payload["reason"] = reason
+    return payload
+
+
+def _holographic_external_view(limit: int = 100) -> dict:
+    path = _holographic_db_path()
+    if not path.exists():
+        return _empty_holographic_external_view(path, "store_not_found")
+
+    uri = f"file:{quote(str(path), safe='/')}?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error as exc:
+        return {
+            "provider": "holographic",
+            "available": False,
+            "readonly": True,
+            "db_path": str(path),
+            "reason": "sqlite_open_failed",
+            "error": str(exc),
+            "summary": {"total": 0, "categories": {}},
+            "items": [],
+        }
+
+    try:
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'facts'"
+        ).fetchone()
+        if not table:
+            return _empty_holographic_external_view(path, "facts_table_missing")
+
+        category_rows = conn.execute(
+            "SELECT category, COUNT(*) AS count FROM facts GROUP BY category"
+        ).fetchall()
+        categories = {
+            str(row["category"] or "general"): int(row["count"] or 0)
+            for row in category_rows
+        }
+        total = sum(categories.values())
+
+        rows = conn.execute(
+            """
+            SELECT fact_id, content, category, tags, trust_score, retrieval_count,
+                   helpful_count, created_at, updated_at
+            FROM facts
+            ORDER BY updated_at DESC, fact_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        return {
+            "provider": "holographic",
+            "available": False,
+            "readonly": True,
+            "db_path": str(path),
+            "reason": "sqlite_read_failed",
+            "error": str(exc),
+            "summary": {"total": 0, "categories": {}},
+            "items": [],
+        }
+    finally:
+        conn.close()
+
+    return {
+        "provider": "holographic",
+        "available": True,
+        "readonly": True,
+        "db_path": str(path),
+        "summary": {"total": total, "categories": categories},
+        "items": [
+            {
+                "id": str(row["fact_id"]),
+                "content": row["content"] or "",
+                "category": row["category"] or "general",
+                "tags": _split_holographic_tags(row["tags"]),
+                "trust_score": row["trust_score"],
+                "retrieval_count": row["retrieval_count"] or 0,
+                "helpful_count": row["helpful_count"] or 0,
+                "created_at": row["created_at"] or "",
+                "updated_at": row["updated_at"] or "",
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.get("/memory/providers/{provider}/external")
+def get_memory_provider_external_view(provider: str):
+    """Read provider-specific external memory data when the HUD can do so safely."""
+    provider = provider.strip().lower()
+    if provider not in MEMORY_PROVIDER_OPTIONS:
+        raise HTTPException(400, "unknown memory provider")
+    if provider == "holographic":
+        return _holographic_external_view()
+    return {
+        "provider": provider,
+        "available": False,
+        "readonly": True,
+        "reason": "provider_specific_api_not_configured",
+        "items": [],
+    }
 
 
 class AddBody(BaseModel):
@@ -777,7 +1744,32 @@ class MemoryProviderBody(BaseModel):
 
 
 class MemoryProviderConfigBody(BaseModel):
+    mode: str = ""
     fields: dict[str, str] = Field(default_factory=dict)
+
+
+class MemoryFileBody(BaseModel):
+    content: str
+
+
+class MemoryHistoryCommitBody(BaseModel):
+    target: MemoryTarget
+    content: str
+    source_session_id: str = ""
+    source_message_id: str = ""
+
+
+class MemoryExportBody(BaseModel):
+    pass
+
+
+class MemorySettingsBody(BaseModel):
+    memory_enabled: bool | None = None
+    user_profile_enabled: bool | None = None
+    memory_char_limit: int | None = None
+    user_char_limit: int | None = None
+    write_approval: bool | None = None
+    memory_notifications: str | None = None
 
 
 @router.put("/memory/providers")
@@ -827,12 +1819,18 @@ def _write_honcho_config(updates: dict[str, str]) -> None:
     _write_json_file("honcho.json", data)
 
 
-def _save_provider_fields(provider: str, fields: dict[str, str]) -> None:
+def _save_provider_fields(provider: str, fields: dict[str, str], mode: str = "") -> None:
     info = MEMORY_PROVIDER_OPTIONS[provider]
+    mode = _validate_config_mode(info, mode)
+    fields = {name: value for name, value in fields.items()}
+    if mode and "mode" in {field["name"] for field in info.get("fields", [])}:
+        fields.setdefault("mode", mode)
+
     specs = {field["name"]: field for field in info.get("fields", [])}
     unknown = [name for name in fields if name not in specs]
     if unknown:
         raise HTTPException(400, f"unknown config field: {unknown[0]}")
+    _validate_required_provider_config(provider, fields, mode)
 
     env_updates: dict[str, str] = {}
     json_updates: dict[str, dict[str, str]] = {}
@@ -879,7 +1877,7 @@ def save_memory_provider_config(provider: str, body: MemoryProviderConfigBody):
     if provider not in MEMORY_PROVIDER_OPTIONS:
         raise HTTPException(400, "unknown memory provider")
     try:
-        _save_provider_fields(provider, body.fields)
+        _save_provider_fields(provider, body.fields, body.mode)
     except OSError as exc:
         raise HTTPException(500, f"failed to write provider config: {exc}") from exc
     return _memory_provider_payload()
@@ -925,10 +1923,22 @@ def check_memory_provider_status(body: MemoryProviderBody):
                 "command": "hermes memory status",
             }
 
+    payload = _memory_provider_payload()
+    health = None
+    if provider:
+        provider_payload = payload["providers"].get(provider)
+        if provider_payload:
+            health = {
+                **provider_payload["health"],
+                "checked_at": _utc_now_iso(),
+                "status_command": status,
+            }
+
     return {
         "provider": provider,
-        "active_provider": _memory_provider_payload()["active_provider"],
+        "active_provider": payload["active_provider"],
         "status_command": status,
+        "health": health,
     }
 
 
