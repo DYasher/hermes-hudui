@@ -540,6 +540,20 @@ def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home:
     assert cognee["capabilities"]["external_read_mode"] == "provider_summary"
 
 
+def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: Path) -> None:
+    status = get_memory_providers()
+    provider = status["providers"]["agentmemory"]
+    modes = {mode["id"]: mode for mode in provider["config_modes"]}
+    fields = {field["name"]: field for field in provider["config_fields"]}
+
+    assert provider["label"] == "agentmemory"
+    assert provider["group"] == "community"
+    assert modes["rest_server"]["required_fields"] == ["AGENTMEMORY_URL"]
+    assert modes["mcp_server"]["required_fields"] == ["AGENTMEMORY_MCP_COMMAND"]
+    assert fields["AGENTMEMORY_SECRET"]["secret"] is True
+    assert provider["capabilities"]["external_read_mode"] == "provider_summary"
+
+
 def test_memory_provider_status_reads_config(hermes_home: Path) -> None:
     _config_file(hermes_home).write_text(
         "memory:\n  provider: holographic\n  memory_char_limit: 3000\n",
