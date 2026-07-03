@@ -139,6 +139,16 @@ def test_memory_panel_renders_provider_specific_external_memory_view() -> None:
     assert "'memory.externalTrust'" in translations
 
 
+def test_memory_panel_renders_summary_only_external_memory_view() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
+
+    assert "summaryOnly" in panel
+    assert "externalView?.reason === 'summary_only'" in panel
+    assert "memory.externalSummaryOnly" in panel
+    assert "'memory.externalSummaryOnly'" in translations
+
+
 def test_memory_panel_uses_external_memory_console_tabs() -> None:
     panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
     translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
@@ -174,6 +184,15 @@ def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_st
     assert "'memory.officialProviders'" in translations
     assert "'memory.communityProviders'" in translations
     assert "'memory.providerConfiguredSuffix'" in translations
+
+
+def test_memory_panel_uses_backend_provider_group_metadata() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+
+    assert "communityProviderIds" not in panel
+    assert "group: 'official' | 'community'" in panel
+    assert "provider.group" in panel
+    assert "providerGroups(providers" in panel
 
 
 def test_memory_panel_moves_diagnostics_and_external_view_out_of_default_flow() -> None:

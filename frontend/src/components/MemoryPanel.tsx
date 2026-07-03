@@ -103,6 +103,7 @@ interface MemoryProviderExternalView {
 
 interface MemoryProviderInfo {
   id: string
+  group: 'official' | 'community'
   label: string
   storage: string
   setup_command: string
@@ -1382,6 +1383,7 @@ function ExternalMemoryViewPanel({
   const meta = provider.external_view
   const categories = externalView?.summary.categories || {}
   const items = externalView?.items || []
+  const summaryOnly = externalView?.reason === 'summary_only' && !items.length
   const unavailableReason = externalView?.reason || meta.reason || t('memory.externalUnavailable')
 
   return (
@@ -1437,7 +1439,11 @@ function ExternalMemoryViewPanel({
             </div>
           )}
 
-          {!busy && !items.length ? (
+          {!busy && summaryOnly ? (
+            <div className="text-[12px] p-2" style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-text-dim)' }}>
+              {t('memory.externalSummaryOnly')}
+            </div>
+          ) : !busy && !items.length ? (
             <div className="text-[12px] p-2" style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-text-dim)' }}>
               {t('memory.externalNoItems')}
             </div>
@@ -1485,7 +1491,6 @@ function ExternalMemoryViewPanel({
 type MemoryProviderConfigField = MemoryProviderInfo['config_fields'][number]
 type MemoryProviderConsoleTab = 'overview' | 'config' | 'diagnostics' | 'external' | 'install'
 
-const communityProviderIds = new Set(['cognee', 'agentmemory', 'memos'])
 const providerConsoleTabs: Array<{ id: MemoryProviderConsoleTab; labelKey: TranslationKey }> = [
   { id: 'overview', labelKey: 'memory.providerOverview' },
   { id: 'config', labelKey: 'memory.configureProvider' },
@@ -1499,12 +1504,12 @@ function providerGroups(providers: MemoryProviderInfo[]): Array<{ id: string; la
     {
       id: 'official',
       labelKey: 'memory.officialProviders',
-      providers: providers.filter(provider => !communityProviderIds.has(provider.id)),
+      providers: providers.filter(provider => provider.group !== 'community'),
     },
     {
       id: 'community',
       labelKey: 'memory.communityProviders',
-      providers: providers.filter(provider => communityProviderIds.has(provider.id)),
+      providers: providers.filter(provider => provider.group === 'community'),
     },
   ]
   return groups.filter(group => group.providers.length)
