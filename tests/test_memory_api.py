@@ -511,6 +511,16 @@ def test_memory_provider_status_defaults_to_builtin_only(hermes_home: Path) -> N
     assert status["providers"]["honcho"]["config_command"] == "hermes config set memory.provider honcho"
 
 
+def test_memory_provider_payload_includes_provider_groups(hermes_home: Path) -> None:
+    status = get_memory_providers()
+
+    assert status["providers"]["honcho"]["group"] == "official"
+    assert status["providers"]["mem0"]["group"] == "official"
+    assert status["providers"]["cognee"]["group"] == "community"
+    assert status["providers"]["agentmemory"]["group"] == "community"
+    assert status["providers"]["memos"]["group"] == "community"
+
+
 def test_memory_provider_status_reads_config(hermes_home: Path) -> None:
     _config_file(hermes_home).write_text(
         "memory:\n  provider: holographic\n  memory_char_limit: 3000\n",

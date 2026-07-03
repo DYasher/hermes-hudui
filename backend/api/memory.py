@@ -22,6 +22,7 @@ from backend.collectors.memory import collect_memory
 from backend.collectors.config import collect_config
 from backend.collectors.utils import default_hermes_dir, load_yaml
 from backend.services import memory_service
+from backend.services.memory_provider_catalog import provider_group
 from .serialize import to_dict
 
 router = APIRouter()
@@ -524,6 +525,48 @@ MEMORY_PROVIDER_OPTIONS = {
             "Install with: pip install hermes-memori",
             "Run: hermes-memori install",
             "Then run: hermes memory setup",
+        ],
+    },
+    "cognee": {
+        "label": "Cognee",
+        "storage": "local/docker/mcp",
+        "dependencies": [],
+        "required_fields": ["COGNEE_CONFIGURATION_PENDING"],
+        "config_files": [],
+        "fields": [],
+        "modes": [],
+        "setup_command": "uv pip install cognee",
+        "config_command": "hermes config set memory.provider cognee",
+        "notes": [
+            "Community provider metadata is pending detailed configuration support.",
+        ],
+    },
+    "agentmemory": {
+        "label": "agentmemory",
+        "storage": "local/server/mcp",
+        "dependencies": [],
+        "required_fields": ["AGENTMEMORY_CONFIGURATION_PENDING"],
+        "config_files": [],
+        "fields": [],
+        "modes": [],
+        "setup_command": "npm install -g @agentmemory/agentmemory",
+        "config_command": "hermes config set memory.provider agentmemory",
+        "notes": [
+            "Community provider metadata is pending detailed configuration support.",
+        ],
+    },
+    "memos": {
+        "label": "MemOS",
+        "storage": "cloud/self-hosted",
+        "dependencies": [],
+        "required_fields": ["MEMOS_CONFIGURATION_PENDING"],
+        "config_files": [],
+        "fields": [],
+        "modes": [],
+        "setup_command": "git clone https://github.com/MemTensor/MemOS.git",
+        "config_command": "hermes config set memory.provider memos",
+        "notes": [
+            "Community provider metadata is pending detailed configuration support.",
         ],
     },
 }
@@ -1193,6 +1236,7 @@ def _memory_provider_payload() -> dict:
         providers[key] = {
             **info,
             "id": key,
+            "group": provider_group(key),
             "active": active,
             "configured": configured,
             "readiness": readiness,
