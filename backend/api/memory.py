@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import shutil
 import sqlite3
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -20,6 +17,7 @@ from backend.collectors.config import collect_config
 from backend.collectors.utils import default_hermes_dir
 from backend.services import memory_service
 from backend.services import memory_provider_config
+from backend.services import memory_provider_health
 from backend.services.memory_provider_catalog import (
     MEMORY_PROVIDER_CAPABILITIES,
     MEMORY_PROVIDER_OPTIONS,
@@ -47,72 +45,8 @@ def _lock_path(target: MemoryTarget) -> Path:
     return _memory_path(target).with_suffix(".md.lock")
 
 
-def _dependency_checks(info: dict) -> list[dict]:
-    checks = []
-    for dep in info.get("dependencies", []):
-        kind = dep.get("kind")
-        name = dep.get("name")
-        present = False
-        if kind == "command":
-            present = bool(shutil.which(str(name)))
-        elif kind == "python":
-            present = importlib.util.find_spec(str(name)) is not None
-        checks.append(
-            {
-                "kind": kind,
-                "name": name,
-                "ok": present,
-            }
-        )
-    return checks
-
-
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _config_file_checks(info: dict) -> list[dict]:
-    checks = []
-    for relative_path in info.get("config_files", []):
-        is_directory = str(relative_path).endswith("/")
-        path = memory_provider_config.relative_config_path(str(relative_path).rstrip("/"))
-        checks.append(
-            {
-                "path": relative_path,
-                "kind": "directory" if is_directory else "file",
-                "exists": path.is_dir() if is_directory else path.is_file(),
-            }
-        )
-    return checks
-
-
-def _provider_health(
-    provider: str,
-    *,
-    active: bool,
-    configured: bool,
-    missing_fields: list[str],
-    missing_any: list[list[str]],
-    dependency_checks: list[dict],
-    status_command: dict | None = None,
-) -> dict:
-    dependencies_ok = all(check["ok"] for check in dependency_checks)
-    return {
-        "provider": provider,
-        "active": active,
-        "checked_at": _utc_now_iso(),
-        "config_files": _config_file_checks(MEMORY_PROVIDER_OPTIONS[provider]),
-        "required_config": {
-            "ok": configured,
-            "missing_fields": missing_fields,
-            "missing_any": missing_any,
-        },
-        "dependencies": {
-            "ok": dependencies_ok,
-            "checks": dependency_checks,
-        },
-        "status_command": status_command,
-    }
 
 
 def _provider_capabilities(provider: str) -> dict:
@@ -184,7 +118,7 @@ def _memory_provider_payload() -> dict:
             info,
             config_values,
         )
-        checks = _dependency_checks(info)
+        checks = memory_provider_health.dependency_checks(info)
         dependency_ok = all(check["ok"] for check in checks)
         active = key == active_provider
         current_mode = memory_provider_config.current_config_mode(info, config_values)
@@ -215,7 +149,7 @@ def _memory_provider_payload() -> dict:
             "capabilities": _provider_capabilities(key),
             "schema_source": _provider_schema_source(key),
             "external_view": _provider_external_view_info(key),
-            "health": _provider_health(
+            "health": memory_provider_health.provider_health(
                 key,
                 active=active,
                 configured=configured,
@@ -847,38 +781,7 @@ def check_memory_provider_status(body: MemoryProviderBody):
     if provider and provider not in MEMORY_PROVIDER_OPTIONS:
         raise HTTPException(400, "unknown memory provider")
 
-    hermes = shutil.which("hermes")
-    status = {
-        "ok": False,
-        "exit_code": None,
-        "output": "",
-        "error": "hermes CLI not found on PATH",
-        "command": "hermes memory status",
-    }
-    if hermes:
-        try:
-            completed = subprocess.run(
-                [hermes, "memory", "status"],
-                cwd=str(default_hermes_dir()),
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
-            status = {
-                "ok": completed.returncode == 0,
-                "exit_code": completed.returncode,
-                "output": completed.stdout.strip(),
-                "error": completed.stderr.strip(),
-                "command": "hermes memory status",
-            }
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            status = {
-                "ok": False,
-                "exit_code": None,
-                "output": "",
-                "error": str(exc),
-                "command": "hermes memory status",
-            }
+    status = memory_provider_health.hermes_status_command()
 
     payload = _memory_provider_payload()
     health = None
@@ -887,7 +790,7 @@ def check_memory_provider_status(body: MemoryProviderBody):
         if provider_payload:
             health = {
                 **provider_payload["health"],
-                "checked_at": _utc_now_iso(),
+                "checked_at": memory_provider_health.utc_now_iso(),
                 "status_command": status,
             }
 

@@ -942,9 +942,12 @@ def test_external_view_for_cognee_is_summary_only(hermes_home: Path) -> None:
 def test_memory_provider_check_runs_official_status_command(monkeypatch, hermes_home: Path) -> None:
     _config_file(hermes_home).write_text("memory:\n  provider: honcho\n", encoding="utf-8")
 
-    monkeypatch.setattr("backend.api.memory.shutil.which", lambda name: "/usr/bin/hermes")
     monkeypatch.setattr(
-        "backend.api.memory.subprocess.run",
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/hermes",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0,
             stdout="Memory provider: honcho\nStatus: active\n",
@@ -963,9 +966,12 @@ def test_memory_provider_check_runs_official_status_command(monkeypatch, hermes_
 
 
 def test_memory_provider_check_omits_health_for_builtin_only(monkeypatch, hermes_home: Path) -> None:
-    monkeypatch.setattr("backend.api.memory.shutil.which", lambda name: "/usr/bin/hermes")
     monkeypatch.setattr(
-        "backend.api.memory.subprocess.run",
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/hermes",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
     )
 
