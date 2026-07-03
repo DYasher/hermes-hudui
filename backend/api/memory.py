@@ -4,24 +4,22 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import shutil
 import sqlite3
 import subprocess
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
 
-import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.collectors.memory import collect_memory
 from backend.collectors.config import collect_config
-from backend.collectors.utils import default_hermes_dir, load_yaml
+from backend.collectors.utils import default_hermes_dir
 from backend.services import memory_service
+from backend.services import memory_provider_config
 from backend.services.memory_provider_catalog import (
     MEMORY_PROVIDER_CAPABILITIES,
     MEMORY_PROVIDER_OPTIONS,
@@ -33,7 +31,6 @@ from .serialize import to_dict
 router = APIRouter()
 
 ENTRY_DELIMITER = memory_service.ENTRY_DELIMITER
-HOST_KEY = "hermes"
 
 MemoryTarget = Literal["memory", "user"]
 
@@ -48,180 +45,6 @@ def _memory_path(target: MemoryTarget) -> Path:
 
 def _lock_path(target: MemoryTarget) -> Path:
     return _memory_path(target).with_suffix(".md.lock")
-
-
-def _config_path() -> Path:
-    return Path(default_hermes_dir()) / "config.yaml"
-
-
-def _env_path() -> Path:
-    return Path(default_hermes_dir()) / ".env"
-
-
-def _relative_config_path(relative_path: str) -> Path:
-    return Path(default_hermes_dir()) / relative_path
-
-
-def _atomic_write_text(path: Path, text: str, prefix: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=prefix)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except Exception:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
-
-
-def _read_config() -> dict:
-    path = _config_path()
-    if not path.exists():
-        return {}
-    try:
-        data = load_yaml(path.read_text(encoding="utf-8")) or {}
-    except OSError:
-        raise HTTPException(500, "failed to read config.yaml") from None
-    return data if isinstance(data, dict) else {}
-
-
-def _write_config(config: dict) -> None:
-    path = _config_path()
-    text = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
-    _atomic_write_text(path, text, ".config.yaml_")
-
-
-def _read_env_values() -> dict[str, str]:
-    path = _env_path()
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return {}
-    except OSError:
-        raise HTTPException(500, "failed to read .env") from None
-
-    values: dict[str, str] = {}
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        if key:
-            values[key] = value
-    return values
-
-
-def _write_env_values(updates: dict[str, str]) -> None:
-    path = _env_path()
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        lines = []
-    except OSError:
-        raise HTTPException(500, "failed to read .env") from None
-
-    written: set[str] = set()
-    next_lines: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in line:
-            key = line.split("=", 1)[0].strip()
-            if key in updates:
-                next_lines.append(f"{key}={updates[key]}")
-                written.add(key)
-                continue
-        next_lines.append(line)
-
-    for key, value in updates.items():
-        if key not in written:
-            next_lines.append(f"{key}={value}")
-
-    _atomic_write_text(path, "\n".join(next_lines).rstrip() + "\n", ".env_")
-
-
-def _read_json_file(relative_path: str) -> dict:
-    path = _relative_config_path(relative_path)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError as exc:
-        raise HTTPException(400, f"invalid JSON in {relative_path}: {exc.msg}") from exc
-    except OSError:
-        raise HTTPException(500, f"failed to read {relative_path}") from None
-    return data if isinstance(data, dict) else {}
-
-
-def _write_json_file(relative_path: str, data: dict) -> None:
-    path = _relative_config_path(relative_path)
-    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-    _atomic_write_text(path, text, f".{Path(relative_path).name}_")
-
-
-def _json_field_value(provider: str, data: dict, field: dict):
-    name = field["name"]
-    if provider == "honcho" and name in {"peerName", "workspace", "aiPeer"}:
-        value = data.get(name)
-        if value not in (None, ""):
-            return value
-        hosts = data.get("hosts")
-        host = hosts.get(HOST_KEY) if isinstance(hosts, dict) else None
-        if isinstance(host, dict):
-            return host.get(name)
-    return data.get(name)
-
-
-def _config_section(config: dict, parts: list[str]) -> dict:
-    current = config
-    for part in parts:
-        child = current.get(part)
-        if not isinstance(child, dict):
-            child = {}
-            current[part] = child
-        current = child
-    return current
-
-
-def _yaml_field_value(config: dict, field: dict):
-    current = config
-    for part in field.get("section", []):
-        if not isinstance(current, dict):
-            return None
-        current = current.get(part)
-    if not isinstance(current, dict):
-        return None
-    return current.get(field["name"])
-
-
-def _coerce_config_value(value: str):
-    stripped = value.strip()
-    lowered = stripped.lower()
-    if lowered == "true":
-        return True
-    if lowered == "false":
-        return False
-    try:
-        return int(stripped)
-    except ValueError:
-        pass
-    try:
-        return float(stripped)
-    except ValueError:
-        return stripped
-
-
-def _validate_config_value(name: str, value: str) -> str:
-    value = value.strip()
-    if "\n" in value or "\r" in value:
-        raise HTTPException(400, f"{name} cannot contain newlines")
-    return value
 
 
 def _dependency_checks(info: dict) -> list[dict]:
@@ -252,7 +75,7 @@ def _config_file_checks(info: dict) -> list[dict]:
     checks = []
     for relative_path in info.get("config_files", []):
         is_directory = str(relative_path).endswith("/")
-        path = _relative_config_path(str(relative_path).rstrip("/"))
+        path = memory_provider_config.relative_config_path(str(relative_path).rstrip("/"))
         checks.append(
             {
                 "path": relative_path,
@@ -290,221 +113,6 @@ def _provider_health(
         },
         "status_command": status_command,
     }
-
-
-def _field_requirement(info: dict, field_name: str) -> tuple[str, list[str]]:
-    if field_name in info.get("required_fields", []):
-        return "required", []
-    for group in info.get("required_any", []):
-        if field_name in group:
-            return "required_any", group
-    return "optional", []
-
-
-def _mode_specs(info: dict) -> list[dict]:
-    modes = []
-    for mode in info.get("modes", []):
-        modes.append(
-            {
-                "id": mode["id"],
-                "label": mode.get("label", mode["id"]),
-                "storage": mode.get("storage", info.get("storage", "")),
-                "description": mode.get("description", ""),
-                "fields": mode.get("fields", []),
-                "required_fields": mode.get("required_fields", []),
-                "required_any": mode.get("required_any", []),
-                "optional_fields": mode.get("optional_fields", []),
-            }
-        )
-    return modes
-
-
-def _default_mode(info: dict) -> str:
-    modes = _mode_specs(info)
-    return modes[0]["id"] if modes else ""
-
-
-def _mode_by_id(info: dict, mode_id: str) -> dict | None:
-    for mode in _mode_specs(info):
-        if mode["id"] == mode_id:
-            return mode
-    return None
-
-
-def _field_mode_ids(info: dict, field_name: str) -> list[str]:
-    mode_ids = [
-        mode["id"]
-        for mode in _mode_specs(info)
-        if field_name in mode.get("fields", [])
-    ]
-    if mode_ids:
-        return mode_ids
-    modes = _mode_specs(info)
-    return [mode["id"] for mode in modes]
-
-
-def _field_specs(info: dict) -> list[dict]:
-    fields = []
-    for field in info.get("fields", []):
-        requirement, required_group = _field_requirement(info, field["name"])
-        fields.append(
-            {
-                "name": field["name"],
-                "label": field.get("label", field["name"]),
-                "storage": field.get("storage", ""),
-                "path": field.get("path", field.get("storage", "")),
-                "secret": bool(field.get("secret", False)),
-                "help": field.get("help", ""),
-                "requirement": requirement,
-                "required_group": required_group,
-                "mode_ids": _field_mode_ids(info, field["name"]),
-            }
-        )
-    return fields
-
-
-def _provider_config_values(provider: str) -> dict[str, dict]:
-    info = MEMORY_PROVIDER_OPTIONS[provider]
-    env_values = _read_env_values()
-    config = _read_config()
-    json_cache: dict[str, dict] = {}
-    values: dict[str, dict] = {}
-
-    for field in info.get("fields", []):
-        name = field["name"]
-        raw = None
-        source = field.get("storage", "")
-        if source == "env":
-            raw = env_values.get(name)
-            if raw in (None, ""):
-                raw = os.environ.get(name)
-        elif source == "json":
-            relative_path = field.get("path", "")
-            if relative_path not in json_cache:
-                json_cache[relative_path] = _read_json_file(relative_path)
-            raw = _json_field_value(provider, json_cache[relative_path], field)
-            source = relative_path
-        elif source == "yaml":
-            raw = _yaml_field_value(config, field)
-            source = "config.yaml"
-
-        configured = raw not in (None, "")
-        values[name] = {
-            "configured": configured,
-            "secret": bool(field.get("secret", False)),
-            "source": source,
-            "value": "" if field.get("secret") else ("" if raw is None else str(raw)),
-        }
-    return values
-
-
-def _required_state(info: dict, values: dict[str, dict]) -> tuple[bool, list[str], list[list[str]]]:
-    missing_fields = [
-        name
-        for name in info.get("required_fields", [])
-        if not values.get(name, {}).get("configured", False)
-    ]
-    missing_any = [
-        group
-        for group in info.get("required_any", [])
-        if not any(values.get(name, {}).get("configured", False) for name in group)
-    ]
-    if not info.get("fields") and not missing_fields and not missing_any:
-        return True, [], []
-    return not missing_fields and not missing_any, missing_fields, missing_any
-
-
-def _required_state_for_mode(
-    info: dict,
-    values: dict[str, dict],
-    mode_id: str,
-) -> tuple[bool, list[str], list[list[str]]]:
-    mode = _mode_by_id(info, mode_id)
-    if not mode:
-        return _required_state(info, values)
-
-    missing_fields = [
-        name
-        for name in mode.get("required_fields", [])
-        if name != "mode" and not values.get(name, {}).get("configured", False)
-    ]
-    missing_any = [
-        group
-        for group in mode.get("required_any", [])
-        if not any(
-            name == "mode" or values.get(name, {}).get("configured", False)
-            for name in group
-        )
-    ]
-    return not missing_fields and not missing_any, missing_fields, missing_any
-
-
-def _current_config_mode(info: dict, values: dict[str, dict]) -> str:
-    default_mode = _default_mode(info)
-    modes = _mode_specs(info)
-    if not modes:
-        return ""
-
-    configured_mode = values.get("mode", {}).get("value")
-    if isinstance(configured_mode, str) and _mode_by_id(info, configured_mode):
-        return configured_mode
-
-    for field in info.get("fields", []):
-        name = field["name"]
-        if not values.get(name, {}).get("configured", False):
-            continue
-        mode_ids = _field_mode_ids(info, name)
-        if len(mode_ids) == 1:
-            return mode_ids[0]
-
-    return default_mode
-
-
-def _validate_config_mode(info: dict, mode: str) -> str:
-    mode = mode.strip()
-    if not mode:
-        return ""
-    if not _mode_by_id(info, mode):
-        raise HTTPException(400, f"unknown provider config mode: {mode}")
-    return mode
-
-
-def _validate_required_provider_config(
-    provider: str,
-    fields: dict[str, str],
-    mode: str = "",
-) -> None:
-    info = MEMORY_PROVIDER_OPTIONS[provider]
-    mode = _validate_config_mode(info, mode)
-    values = _provider_config_values(provider)
-    for name, raw_value in fields.items():
-        value = str(raw_value).strip()
-        if value and name in values:
-            values[name] = {
-                **values[name],
-                "configured": True,
-                "value": "" if values[name].get("secret") else value,
-            }
-
-    configured, missing_fields, missing_any = (
-        _required_state_for_mode(info, values, mode) if mode else _required_state(info, values)
-    )
-    if configured:
-        return
-
-    missing = [*missing_fields, *[" / ".join(group) for group in missing_any]]
-    raise HTTPException(
-        400,
-        "missing required provider config: " + ", ".join(missing),
-    )
-
-
-def _active_memory_provider(config: dict) -> str:
-    memory_cfg = config.get("memory", {})
-    if not isinstance(memory_cfg, dict):
-        return ""
-    provider = str(memory_cfg.get("provider") or "").strip()
-    return provider if provider in MEMORY_PROVIDER_OPTIONS else ""
 
 
 def _provider_capabilities(provider: str) -> dict:
@@ -566,15 +174,20 @@ def _provider_external_view_info(provider: str) -> dict:
 
 
 def _memory_provider_payload() -> dict:
-    active_provider = _active_memory_provider(_read_config())
+    active_provider = memory_provider_config.active_memory_provider(
+        memory_provider_config.read_config()
+    )
     providers = {}
     for key, info in MEMORY_PROVIDER_OPTIONS.items():
-        config_values = _provider_config_values(key)
-        configured, missing_fields, missing_any = _required_state(info, config_values)
+        config_values = memory_provider_config.provider_config_values(key)
+        configured, missing_fields, missing_any = memory_provider_config.required_state(
+            info,
+            config_values,
+        )
         checks = _dependency_checks(info)
         dependency_ok = all(check["ok"] for check in checks)
         active = key == active_provider
-        current_mode = _current_config_mode(info, config_values)
+        current_mode = memory_provider_config.current_config_mode(info, config_values)
         if not configured:
             readiness = "selected" if active else "missing_config"
         elif active and dependency_ok:
@@ -594,10 +207,10 @@ def _memory_provider_payload() -> dict:
             "missing_fields": missing_fields,
             "missing_any": missing_any,
             "checks": checks,
-            "config_modes": _mode_specs(info),
-            "default_mode": _default_mode(info),
+            "config_modes": memory_provider_config.mode_specs(info),
+            "default_mode": memory_provider_config.default_mode(info),
             "current_mode": current_mode,
-            "config_fields": _field_specs(info),
+            "config_fields": memory_provider_config.field_specs(info),
             "config_values": config_values,
             "capabilities": _provider_capabilities(key),
             "schema_source": _provider_schema_source(key),
@@ -977,7 +590,7 @@ def get_memory_providers():
 
 def _holographic_db_path() -> Path:
     hermes_home = Path(default_hermes_dir())
-    config = _read_config()
+    config = memory_provider_config.read_config()
     plugin_cfg = config.get("plugins", {})
     if isinstance(plugin_cfg, dict):
         plugin_cfg = plugin_cfg.get("hermes-memory-store", {})
@@ -1103,9 +716,9 @@ def _holographic_external_view(limit: int = 100) -> dict:
 
 def _provider_summary_external_view(provider: str) -> dict:
     info = MEMORY_PROVIDER_OPTIONS[provider]
-    values = _provider_config_values(provider)
-    current_mode = _current_config_mode(info, values)
-    configured, _missing_fields, _missing_any = _required_state_for_mode(
+    values = memory_provider_config.provider_config_values(provider)
+    current_mode = memory_provider_config.current_config_mode(info, values)
+    configured, _missing_fields, _missing_any = memory_provider_config.required_state_for_mode(
         info,
         values,
         current_mode,
@@ -1196,7 +809,7 @@ def set_memory_provider(body: MemoryProviderBody):
     if provider and provider not in MEMORY_PROVIDER_OPTIONS:
         raise HTTPException(400, "unknown memory provider")
 
-    config = _read_config()
+    config = memory_provider_config.read_config()
     memory_cfg = config.get("memory", {})
     if not isinstance(memory_cfg, dict):
         memory_cfg = {}
@@ -1207,84 +820,11 @@ def set_memory_provider(body: MemoryProviderBody):
     config["memory"] = memory_cfg
 
     try:
-        _write_config(config)
+        memory_provider_config.write_config(config)
     except OSError as exc:
         raise HTTPException(500, f"failed to write config.yaml: {exc}") from exc
 
     return _memory_provider_payload()
-
-
-def _write_honcho_config(updates: dict[str, str]) -> None:
-    data = _read_json_file("honcho.json")
-    host_fields = {"peerName", "workspace", "aiPeer"}
-    hosts = data.get("hosts")
-    if not isinstance(hosts, dict):
-        hosts = {}
-        data["hosts"] = hosts
-    host = hosts.get(HOST_KEY)
-    if not isinstance(host, dict):
-        host = {}
-        hosts[HOST_KEY] = host
-    if any(name in updates for name in host_fields):
-        host.setdefault("enabled", True)
-
-    for name, value in updates.items():
-        data[name] = _coerce_config_value(value)
-        if name in host_fields:
-            host[name] = _coerce_config_value(value)
-
-    _write_json_file("honcho.json", data)
-
-
-def _save_provider_fields(provider: str, fields: dict[str, str], mode: str = "") -> None:
-    info = MEMORY_PROVIDER_OPTIONS[provider]
-    mode = _validate_config_mode(info, mode)
-    fields = {name: value for name, value in fields.items()}
-    if mode and "mode" in {field["name"] for field in info.get("fields", [])}:
-        fields.setdefault("mode", mode)
-
-    specs = {field["name"]: field for field in info.get("fields", [])}
-    unknown = [name for name in fields if name not in specs]
-    if unknown:
-        raise HTTPException(400, f"unknown config field: {unknown[0]}")
-    _validate_required_provider_config(provider, fields, mode)
-
-    env_updates: dict[str, str] = {}
-    json_updates: dict[str, dict[str, str]] = {}
-    yaml_updates: list[tuple[dict, str]] = []
-
-    for name, raw_value in fields.items():
-        spec = specs[name]
-        value = _validate_config_value(name, str(raw_value))
-        if not value:
-            continue
-        storage = spec.get("storage")
-        if storage == "env":
-            env_updates[name] = value
-        elif storage == "json":
-            relative_path = spec.get("path", "")
-            json_updates.setdefault(relative_path, {})[name] = value
-        elif storage == "yaml":
-            yaml_updates.append((spec, value))
-
-    if env_updates:
-        _write_env_values(env_updates)
-
-    for relative_path, updates in json_updates.items():
-        if provider == "honcho" and relative_path == "honcho.json":
-            _write_honcho_config(updates)
-            continue
-        data = _read_json_file(relative_path)
-        for name, value in updates.items():
-            data[name] = _coerce_config_value(value)
-        _write_json_file(relative_path, data)
-
-    if yaml_updates:
-        config = _read_config()
-        for spec, value in yaml_updates:
-            section = _config_section(config, spec.get("section", []))
-            section[spec["name"]] = _coerce_config_value(value)
-        _write_config(config)
 
 
 @router.put("/memory/providers/{provider}/config")
@@ -1294,7 +834,7 @@ def save_memory_provider_config(provider: str, body: MemoryProviderConfigBody):
     if provider not in MEMORY_PROVIDER_OPTIONS:
         raise HTTPException(400, "unknown memory provider")
     try:
-        _save_provider_fields(provider, body.fields, body.mode)
+        memory_provider_config.save_provider_fields(provider, body.fields, body.mode)
     except OSError as exc:
         raise HTTPException(500, f"failed to write provider config: {exc}") from exc
     return _memory_provider_payload()
