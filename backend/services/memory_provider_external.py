@@ -150,14 +150,77 @@ def provider_summary_external_view(provider: str) -> dict[str, Any]:
         values,
         current_mode,
     )
-    configured_count = 1 if configured else 0
+    modes = {mode["id"]: mode for mode in memory_provider_config.mode_specs(info)}
+    mode = modes.get(current_mode, {})
+    fields = memory_provider_config.field_specs(info)
+    visible_field_names = set(mode.get("fields", []))
+    configured_fields = [
+        field
+        for field in fields
+        if (not visible_field_names or field["name"] in visible_field_names)
+        and field["name"] != "mode"
+        and values.get(field["name"], {}).get("configured")
+    ]
+    missing_field_labels = [
+        next((field["label"] for field in fields if field["name"] == name), name)
+        for name in _missing_fields
+        if name != "mode"
+    ]
+    missing_any_labels = [
+        " / ".join(
+            next((field["label"] for field in fields if field["name"] == name), name)
+            for name in group
+            if name != "mode"
+        )
+        for group in _missing_any
+    ]
+    missing_labels = [label for label in [*missing_field_labels, *missing_any_labels] if label]
+    configured_labels = [field["label"] for field in configured_fields]
+    mode_label = mode.get("label") or current_mode or "default"
+    storage = mode.get("storage") or info.get("storage", "")
+    config_text = (
+        ", ".join(configured_labels)
+        if configured_labels
+        else "No provider fields are configured yet."
+    )
+    missing_text = ", ".join(missing_labels) if missing_labels else "No required fields are missing."
+    items = [
+        {
+            "id": f"{provider}:runtime",
+            "content": f"Mode: {mode_label}; storage: {storage}; configured: {'yes' if configured else 'no'}.",
+            "category": "runtime",
+            "tags": [tag for tag in [current_mode, storage] if tag],
+            "trust_score": 1.0 if configured else 0.0,
+            "retrieval_count": 0,
+            "helpful_count": 0,
+            "created_at": "",
+            "updated_at": "",
+        },
+        {
+            "id": f"{provider}:config",
+            "content": f"Configured fields: {config_text}. Missing required fields: {missing_text}",
+            "category": "config",
+            "tags": [field["name"] for field in configured_fields],
+            "trust_score": 1.0 if configured else 0.0,
+            "retrieval_count": 0,
+            "helpful_count": 0,
+            "created_at": "",
+            "updated_at": "",
+        },
+    ]
     return {
         "provider": provider,
         "available": True,
         "readonly": True,
-        "reason": "summary_only",
-        "summary": {"total": configured_count, "categories": {"configured": configured_count}},
-        "items": [],
+        "reason": "provider_summary",
+        "summary": {
+            "total": len(items),
+            "categories": {
+                "configured_fields": len(configured_fields),
+                "missing_required": len(missing_labels),
+            },
+        },
+        "items": items,
     }
 
 

@@ -963,9 +963,68 @@ def test_external_view_for_cognee_is_summary_only(hermes_home: Path) -> None:
     assert result["provider"] == "cognee"
     assert result["available"] is True
     assert result["readonly"] is True
-    assert result["reason"] == "summary_only"
-    assert result["summary"] == {"total": 0, "categories": {"configured": 0}}
-    assert result["items"] == []
+    assert result["reason"] == "provider_summary"
+    assert result["summary"]["categories"]["configured_fields"] == 0
+    assert result["summary"]["categories"]["missing_required"] == 1
+    assert {item["category"] for item in result["items"]} == {"runtime", "config"}
+
+
+def test_external_view_for_community_provider_reports_safe_config_summary(hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "MEMOS_API_KEY=secret-memos-key\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "memos.json").write_text('{"namespace": "hermes"}\n', encoding="utf-8")
+
+    result = get_memory_provider_external_view("memos")
+
+    assert result["provider"] == "memos"
+    assert result["available"] is True
+    assert result["reason"] == "provider_summary"
+    assert result["summary"]["categories"]["configured_fields"] == 1
+    assert result["summary"]["categories"]["missing_required"] == 0
+    assert any("Cloud API" in item["content"] for item in result["items"])
+    assert "secret-memos-key" not in str(result)
+
+
+def test_memory_provider_check_runs_agentmemory_runtime_probe(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "AGENTMEMORY_URL=http://127.0.0.1:3111\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/hermes",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
+    )
+
+    seen_urls: list[str] = []
+
+    class FakeResponse:
+        def getcode(self) -> int:
+            return 200
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_urls.append(request.full_url)
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_health.urlopen", fake_urlopen)
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="agentmemory"))
+
+    assert seen_urls == ["http://127.0.0.1:3111/agentmemory/health"]
+    runtime = result["health"]["runtime"]
+    assert runtime["ok"] is True
+    assert runtime["mode"] == "rest_server"
+    assert runtime["checks"][0]["kind"] == "http"
+    assert runtime["checks"][0]["status_code"] == 200
 
 
 def test_memory_provider_check_runs_official_status_command(monkeypatch, hermes_home: Path) -> None:

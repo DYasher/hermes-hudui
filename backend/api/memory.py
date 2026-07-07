@@ -468,6 +468,7 @@ def check_memory_provider_status(body: MemoryProviderBody):
             health = {
                 **provider_payload["health"],
                 "checked_at": memory_provider_health.utc_now_iso(),
+                "runtime": memory_provider_health.provider_runtime_checks(provider),
                 "status_command": status,
             }
 

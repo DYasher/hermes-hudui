@@ -11,6 +11,15 @@ interface MemoryStatusCommand {
   command: string
 }
 
+interface MemoryProviderRuntimeCheck {
+  kind: string
+  name: string
+  ok: boolean
+  url?: string
+  status_code?: number | null
+  error?: string
+}
+
 interface MemoryProviderHealth {
   provider: string
   active: boolean
@@ -32,6 +41,12 @@ interface MemoryProviderHealth {
       name: string
       ok: boolean
     }>
+  }
+  runtime: {
+    ok: boolean | null
+    mode: string
+    reason: string
+    checks: MemoryProviderRuntimeCheck[]
   }
   status_command: MemoryStatusCommand | null
 }
@@ -1893,7 +1908,7 @@ function ProviderDiagnosticsTab({
           <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
             {t('memory.healthChecks')}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-1.5">
             <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthConfig')}</div>
               <div className="text-[12px]" style={{ color: healthColor(activeHealth.required_config.ok) }}>
@@ -1910,6 +1925,12 @@ function ProviderDiagnosticsTab({
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
               <div className="text-[12px]" style={{ color: activeHealth.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
                 {activeHealth.active ? t('memory.activeState') : t('memory.inactiveState')}
+              </div>
+            </div>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthRuntime')}</div>
+              <div className="text-[12px]" style={{ color: healthColor(activeHealth.runtime?.ok) }}>
+                {healthText(activeHealth.runtime?.ok)}
               </div>
             </div>
             <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
@@ -2261,15 +2282,7 @@ function MemoryProvidersPanel({
   }
 
   const requiredConfigIssues = validateRequiredConfig(detailProvider, selectedMode)
-  const statusOutput = statusResult?.status_command.output || statusResult?.status_command.error || t('memory.noStatusOutput')
   const activeHealth = statusResult?.health || detailProvider?.health
-
-  const checkedAtText = (value?: string) => {
-    if (!value) return t('memory.statusNotRun')
-    const parsed = new Date(value)
-    if (Number.isNaN(parsed.getTime())) return value
-    return parsed.toLocaleString()
-  }
 
   const healthColor = (ok: boolean | null | undefined) => {
     if (ok === true) return 'var(--hud-success)'
@@ -2282,6 +2295,37 @@ function MemoryProvidersPanel({
     if (ok === false) return t('memory.missingConfig')
     return t('memory.statusNotRun')
   }
+
+  const checkedAtText = (value?: string) => {
+    if (!value) return t('memory.statusNotRun')
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return value
+    return parsed.toLocaleString()
+  }
+
+  const formatRuntimeOutput = (health?: MemoryProviderHealth | null) => {
+    const runtime = health?.runtime
+    if (!runtime || runtime.reason === 'not_run') return ''
+    const lines = [
+      `${t('memory.healthRuntime')}: ${healthText(runtime.ok)}${runtime.mode ? ` (${runtime.mode})` : ''}`,
+    ]
+    if (runtime.reason) lines.push(`reason: ${runtime.reason}`)
+    for (const check of runtime.checks || []) {
+      const pieces = [
+        `${check.name}: ${healthText(check.ok)}`,
+        check.url || '',
+        check.status_code ? `HTTP ${check.status_code}` : '',
+        check.error || '',
+      ].filter(Boolean)
+      lines.push(pieces.join(' · '))
+    }
+    return lines.join('\n')
+  }
+
+  const statusOutput = [
+    statusResult?.status_command.output || statusResult?.status_command.error || t('memory.noStatusOutput'),
+    formatRuntimeOutput(activeHealth),
+  ].filter(Boolean).join('\n\n')
 
   const fieldIsRequired = (field: MemoryProviderConfigField) => {
     if (activeMode) {

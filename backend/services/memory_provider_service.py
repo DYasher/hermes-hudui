@@ -61,7 +61,7 @@ def provider_external_view_info(provider: str) -> dict[str, Any]:
             "readonly": True,
             "endpoint": f"/api/memory/providers/{provider}/external",
             "view_type": "summary",
-            "reason": "summary_only",
+            "reason": "provider_summary",
         }
     return {
         "available": False,

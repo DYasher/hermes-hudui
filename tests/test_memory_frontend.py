@@ -79,13 +79,18 @@ def test_memory_panel_renders_read_only_provider_health_summary() -> None:
     translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
 
     assert "health?: MemoryProviderHealth" in panel
+    assert "interface MemoryProviderRuntimeCheck" in panel
+    assert "runtime:" in panel
     assert "statusResult?.health || detailProvider?.health" in panel
     assert "activeHealth" in panel
     assert "memory.healthChecks" in panel
+    assert "memory.healthRuntime" in panel
     assert "memory.healthConfigFiles" in panel
+    assert "formatRuntimeOutput" in panel
     assert "checked_at" in panel
     assert "config_files" in panel
     assert "'memory.healthChecks'" in translations
+    assert "'memory.healthRuntime'" in translations
     assert "'memory.healthConfigFiles'" in translations
     assert "'memory.lastChecked'" in translations
 
