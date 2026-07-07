@@ -1588,6 +1588,117 @@ function ProviderPicker({
   )
 }
 
+function ProviderConsoleHeader({
+  title,
+  provider,
+  activeProvider,
+  statusCommand,
+  readinessText,
+}: {
+  title: string
+  provider?: MemoryProviderInfo
+  activeProvider?: MemoryProviderInfo
+  statusCommand: string
+  readinessText: (provider?: MemoryProviderInfo) => string
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+      <div>
+        <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+          {title}
+        </div>
+        <div className="text-[13px]" style={{ color: activeProvider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
+          {activeProvider ? readinessText(activeProvider) : t('memory.notConfigured')}
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-[12px]" style={{ color: provider ? 'var(--hud-text)' : 'var(--hud-text-dim)' }}>
+          {provider?.label || t('memory.selectProvider')}
+        </div>
+        <div className="font-mono text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+          {statusCommand}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProviderCatalogRail({
+  providers,
+  selectedProviderId,
+  activeId,
+  busy,
+  onSelect,
+  readinessText,
+}: {
+  providers: MemoryProviderInfo[]
+  selectedProviderId: string
+  activeId: string
+  busy: boolean
+  onSelect: (provider: string) => void
+  readinessText: (provider?: MemoryProviderInfo) => string
+}) {
+  const { t } = useTranslation()
+  const providerCatalogGroups = providerGroups(providers)
+
+  return (
+    <div className="space-y-3 min-w-0">
+      <ProviderPicker
+        providers={providers}
+        selectedId={selectedProviderId}
+        activeId={activeId}
+        busy={busy}
+        onSelect={onSelect}
+        readinessText={readinessText}
+      />
+      <div className="space-y-2">
+        {providerCatalogGroups.map(group => (
+          <div key={group.id}>
+            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+              {t(group.labelKey)}
+            </div>
+            <div className="space-y-1">
+              {group.providers.map(item => {
+                const selected = item.id === selectedProviderId
+                const active = item.id === activeId
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onSelect(item.id)}
+                    disabled={busy}
+                    aria-current={item.id === selectedProviderId ? 'true' : undefined}
+                    className="w-full text-left px-2 py-1.5 cursor-pointer disabled:opacity-40"
+                    style={{
+                      background: selected ? 'var(--hud-bg-hover)' : 'var(--hud-soft-block)',
+                      border: selected ? '1px solid var(--hud-primary)' : '1px solid var(--hud-border)',
+                      color: 'var(--hud-text)',
+                    }}
+                    type="button"
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-[12px] truncate">{item.label}</span>
+                      {active && (
+                        <span className="text-[10px]" style={{ color: 'var(--hud-success)' }}>
+                          {t('memory.activeState')}
+                        </span>
+                      )}
+                    </span>
+                    <span className="block text-[10px] truncate" style={{ color: item.configured ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
+                      {readinessText(item)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ProviderStatusCards({
   provider,
   activeHealth,
@@ -2500,71 +2611,67 @@ function MemoryProvidersPanel({
 
   return (
     <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
-      <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-        <div>
-          <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-            {externalMemoryTitle}
-          </div>
-          <div className="text-[13px]" style={{ color: activeProvider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
-            {activeProvider ? readinessText(activeProvider) : t('memory.notConfigured')}
-          </div>
-        </div>
-        <div className="font-mono text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
-          {data?.status_command || 'hermes memory status'}
-        </div>
-      </div>
-
-      <ProviderPicker
-        providers={providers}
-        selectedId={selectedProviderId}
-        activeId={active}
-        busy={busy}
-        onSelect={setSelected}
+      <ProviderConsoleHeader
+        title={externalMemoryTitle}
+        provider={detailProvider}
+        activeProvider={activeProvider}
+        statusCommand={data?.status_command || 'hermes memory status'}
         readinessText={readinessText}
       />
 
-      <div className="flex flex-wrap gap-1.5 my-3">
-        {providerConsoleTabs.map(tab => {
-          const activeTab = activeProviderTab === tab.id
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveProviderTab(tab.id)}
-              className="px-2 py-1 text-[12px] cursor-pointer"
-              style={{
-                background: activeTab ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
-                color: activeTab ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
-                border: '1px solid var(--hud-border)',
-              }}
-              type="button"
-            >
-              {t(tab.labelKey)}
-            </button>
-          )
-        })}
-      </div>
+      <div className="grid grid-cols-1 2xl:grid-cols-[240px_minmax(0,1fr)] gap-3">
+        <ProviderCatalogRail
+          providers={providers}
+          selectedProviderId={selectedProviderId}
+          activeId={active}
+          busy={busy}
+          onSelect={setSelected}
+          readinessText={readinessText}
+        />
 
-      <div className="text-[13px]">
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>
-            {detailProvider?.label || t('memory.selectProvider')}
-          </span>
-          {detailProvider && (
-            <span style={{ color: 'var(--hud-text-dim)' }}>
-              {t('memory.storage')}: {detailProvider.storage}
+        <div className="text-[13px] min-w-0">
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {providerConsoleTabs.map(tab => {
+              const activeTab = activeProviderTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveProviderTab(tab.id)}
+                  className="px-2 py-1 text-[12px] cursor-pointer"
+                  style={{
+                    background: activeTab ? 'var(--hud-primary)' : 'var(--hud-bg-hover)',
+                    color: activeTab ? 'var(--hud-bg-deep)' : 'var(--hud-text)',
+                    border: '1px solid var(--hud-border)',
+                  }}
+                  type="button"
+                >
+                  {t(tab.labelKey)}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>
+              {detailProvider?.label || t('memory.selectProvider')}
             </span>
-          )}
-          {detailProvider && (
-            <span style={{ color: detailProvider.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
-              {readinessText(detailProvider)}
-            </span>
-          )}
+            {detailProvider && (
+              <span style={{ color: 'var(--hud-text-dim)' }}>
+                {t('memory.storage')}: {detailProvider.storage}
+              </span>
+            )}
+            {detailProvider && (
+              <span style={{ color: detailProvider.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
+                {readinessText(detailProvider)}
+              </span>
+            )}
+          </div>
+
+          {renderProviderTab()}
+
+          {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
+          {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
         </div>
-
-        {renderProviderTab()}
-
-        {notice && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-success)' }}>{notice}</div>}
-        {error && <div className="text-[12px] mt-2" style={{ color: 'var(--hud-error, #f44)' }}>{error}</div>}
       </div>
 
       {statusModalOpen && statusResult && (
