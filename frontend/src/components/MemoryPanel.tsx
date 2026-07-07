@@ -2016,10 +2016,13 @@ function ProviderDiagnosticsTab({
           <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
             {t('memory.statusOutput')}
           </div>
-          <pre
-            role="button"
+          <textarea
+            readOnly
+            aria-readonly="true"
+            aria-multiline="true"
             tabIndex={0}
             aria-label={t('memory.statusOutput')}
+            value={statusOutput}
             onClick={onOpenStatusModal}
             onKeyDown={event => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -2027,7 +2030,7 @@ function ProviderDiagnosticsTab({
                 onOpenStatusModal()
               }
             }}
-            className="text-[11px] whitespace-pre-wrap p-2 overflow-auto cursor-pointer"
+            className="w-full resize-y text-[11px] whitespace-pre-wrap p-2 overflow-auto cursor-pointer outline-none font-mono"
             style={{
               background: 'var(--hud-soft-block)',
               border: '1px solid var(--hud-border)',
@@ -2035,9 +2038,7 @@ function ProviderDiagnosticsTab({
               maxHeight: '280px',
               minHeight: '180px',
             }}
-          >
-            {statusOutput}
-          </pre>
+          />
         </div>
       )}
     </div>

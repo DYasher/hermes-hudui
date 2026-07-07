@@ -288,7 +288,13 @@ def test_memory_panel_opens_status_modal_from_output_box_without_extra_button() 
     assert "'memory.openStatusModal'" not in translations
     assert "onOpenStatusModal={() => setStatusModalOpen(true)}" in panel
     assert "onClick={onOpenStatusModal}" in panel
-    assert "role=\"button\"" in panel
+    diagnostics_block = panel.split("function ProviderDiagnosticsTab", 1)[1].split("function ProviderExternalDataTab", 1)[0]
+    assert "role=\"button\"" not in diagnostics_block
+    assert "<textarea" in diagnostics_block
+    assert "readOnly" in diagnostics_block
+    assert "value={statusOutput}" in diagnostics_block
+    assert "aria-readonly=\"true\"" in diagnostics_block
+    assert "aria-multiline=\"true\"" in diagnostics_block
     assert "tabIndex={0}" in panel
     assert "memory.closeStatusModal" in panel
     assert "maxHeight: '280px'" in panel
