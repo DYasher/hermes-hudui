@@ -79,14 +79,15 @@ def provider_payload() -> dict[str, Any]:
     providers: dict[str, Any] = {}
     for key, info in MEMORY_PROVIDER_OPTIONS.items():
         config_values = memory_provider_config.provider_config_values(key)
-        configured, missing_fields, missing_any = memory_provider_config.required_state(
-            info,
-            config_values,
+        current_mode = memory_provider_config.current_config_mode(info, config_values)
+        configured, missing_fields, missing_any = (
+            memory_provider_config.required_state_for_mode(info, config_values, current_mode)
+            if current_mode
+            else memory_provider_config.required_state(info, config_values)
         )
         checks = memory_provider_health.dependency_checks(info)
         dependency_ok = all(check["ok"] for check in checks)
         active = key == active_provider
-        current_mode = memory_provider_config.current_config_mode(info, config_values)
         if not configured:
             readiness = "selected" if active else "missing_config"
         elif active and dependency_ok:

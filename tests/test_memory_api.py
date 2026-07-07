@@ -559,6 +559,8 @@ def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home:
     assert cognee["label"] == "Cognee"
     assert cognee["group"] == "community"
     assert cognee["storage"] == "local/docker/mcp"
+    assert cognee["configured"] is False
+    assert cognee["missing_fields"] == ["LLM_API_KEY"]
     assert set(modes) == {"python_cli", "docker_api", "mcp_http"}
     assert modes["python_cli"]["required_fields"] == ["LLM_API_KEY"]
     assert modes["docker_api"]["required_fields"] == ["COGNEE_API_URL"]
@@ -577,6 +579,8 @@ def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: 
 
     assert provider["label"] == "agentmemory"
     assert provider["group"] == "community"
+    assert provider["configured"] is False
+    assert provider["missing_fields"] == ["AGENTMEMORY_URL"]
     assert modes["rest_server"]["required_fields"] == ["AGENTMEMORY_URL"]
     assert modes["mcp_server"]["required_fields"] == ["AGENTMEMORY_MCP_COMMAND"]
     assert fields["AGENTMEMORY_SECRET"]["secret"] is True
@@ -591,6 +595,8 @@ def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_hom
 
     assert provider["label"] == "MemOS"
     assert provider["group"] == "community"
+    assert provider["configured"] is False
+    assert provider["missing_fields"] == ["MEMOS_API_KEY"]
     assert modes["cloud"]["required_fields"] == ["MEMOS_API_KEY"]
     assert modes["self_hosted"]["required_fields"] == ["MEMOS_BASE_URL"]
     assert fields["MEMOS_API_KEY"]["secret"] is True
@@ -859,8 +865,8 @@ def test_provider_payload_reports_structured_read_only_health(hermes_home: Path)
     assert health["provider"] == "honcho"
     assert health["active"] is False
     assert health["required_config"]["ok"] is False
-    assert health["required_config"]["missing_fields"] == ["peerName", "workspace", "aiPeer"]
-    assert health["required_config"]["missing_any"] == [["apiKey", "baseUrl"]]
+    assert health["required_config"]["missing_fields"] == ["apiKey", "peerName", "workspace", "aiPeer"]
+    assert health["required_config"]["missing_any"] == []
     assert health["config_files"] == [{"path": "honcho.json", "kind": "file", "exists": True}]
     assert health["dependencies"]["checks"] == status["providers"]["honcho"]["checks"]
     assert health["status_command"] is None
