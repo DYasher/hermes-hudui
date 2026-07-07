@@ -167,6 +167,12 @@ def field_requirement(info: dict[str, Any], field_name: str) -> tuple[str, list[
     for group in info.get("required_any", []):
         if field_name in group:
             return "required_any", group
+    for mode in info.get("modes", []):
+        if field_name in mode.get("required_fields", []):
+            return "required", []
+        for group in mode.get("required_any", []):
+            if field_name in group:
+                return "required_any", group
     return "optional", []
 
 

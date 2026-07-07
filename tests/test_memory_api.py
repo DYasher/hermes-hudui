@@ -566,6 +566,10 @@ def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home:
     assert modes["docker_api"]["required_fields"] == ["COGNEE_API_URL"]
     assert modes["mcp_http"]["required_fields"] == ["COGNEE_MCP_URL"]
     assert fields["LLM_API_KEY"]["secret"] is True
+    assert fields["LLM_API_KEY"]["requirement"] == "required"
+    assert fields["COGNEE_API_URL"]["requirement"] == "required"
+    assert fields["COGNEE_MCP_URL"]["requirement"] == "required"
+    assert fields["COGNEE_DATASET"]["requirement"] == "optional"
     assert fields["COGNEE_API_URL"]["mode_ids"] == ["docker_api"]
     assert fields["COGNEE_MCP_URL"]["mode_ids"] == ["mcp_http"]
     assert cognee["capabilities"]["external_read_mode"] == "provider_summary"
@@ -583,7 +587,10 @@ def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: 
     assert provider["missing_fields"] == ["AGENTMEMORY_URL"]
     assert modes["rest_server"]["required_fields"] == ["AGENTMEMORY_URL"]
     assert modes["mcp_server"]["required_fields"] == ["AGENTMEMORY_MCP_COMMAND"]
+    assert fields["AGENTMEMORY_URL"]["requirement"] == "required"
     assert fields["AGENTMEMORY_SECRET"]["secret"] is True
+    assert fields["AGENTMEMORY_SECRET"]["requirement"] == "optional"
+    assert fields["AGENTMEMORY_MCP_COMMAND"]["requirement"] == "required"
     assert provider["capabilities"]["external_read_mode"] == "provider_summary"
 
 
@@ -600,6 +607,9 @@ def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_hom
     assert modes["cloud"]["required_fields"] == ["MEMOS_API_KEY"]
     assert modes["self_hosted"]["required_fields"] == ["MEMOS_BASE_URL"]
     assert fields["MEMOS_API_KEY"]["secret"] is True
+    assert fields["MEMOS_API_KEY"]["requirement"] == "required"
+    assert fields["MEMOS_BASE_URL"]["requirement"] == "required"
+    assert fields["MOS_CHAT_MODEL_PROVIDER"]["requirement"] == "optional"
     assert "MOS_CHAT_MODEL_PROVIDER" in fields
     assert provider["capabilities"]["external_read_mode"] == "provider_summary"
 
