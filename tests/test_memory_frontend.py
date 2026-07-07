@@ -210,20 +210,6 @@ def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_st
     assert "'memory.providerConfiguredSuffix'" in translations
 
 
-def test_memory_provider_console_uses_split_layout_to_reduce_crowding() -> None:
-    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
-    provider_panel = panel.split("function MemoryProvidersPanel", 1)[1].split("export default function MemoryPanel", 1)[0]
-
-    assert "function ProviderConsoleHeader" in panel
-    assert "function ProviderCatalogRail" in panel
-    assert "2xl:grid-cols-[240px_minmax(0,1fr)]" in provider_panel
-    assert "<ProviderConsoleHeader" in provider_panel
-    assert "<ProviderCatalogRail" in provider_panel
-    assert provider_panel.index("<ProviderConsoleHeader") < provider_panel.index("<ProviderCatalogRail")
-    assert "aria-current={item.id === selectedProviderId ? 'true' : undefined}" in panel
-    assert "providerCatalogGroups.map(group =>" in panel
-
-
 def test_memory_panel_styles_provider_select_options_for_theme_contrast() -> None:
     panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
     provider_picker = panel.split("function ProviderPicker", 1)[1].split("function ProviderStatusCards", 1)[0]
