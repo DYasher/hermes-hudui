@@ -71,6 +71,23 @@ def test_memory_provider_service_payload_matches_api_contract(hermes_home: Path)
     assert result["providers"]["holographic"]["external_view"]["view_type"] == "facts"
 
 
+def test_memory_provider_service_export_redacts_secrets(hermes_home: Path) -> None:
+    from backend.services.memory_provider_service import provider_export_payload
+
+    _config_file(hermes_home).write_text("memory:\n  provider: mem0\n", encoding="utf-8")
+    _env_file(hermes_home).write_text("MEM0_API_KEY=secret\n", encoding="utf-8")
+    (hermes_home / "mem0.json").write_text('{"user_id": "u1"}\n', encoding="utf-8")
+
+    result = provider_export_payload()
+
+    assert result["active_provider"] == "mem0"
+    assert result["providers"]["mem0"]["fields"]["MEM0_API_KEY"]["redacted"] is True
+    assert result["providers"]["mem0"]["fields"]["MEM0_API_KEY"]["value"] == ""
+    assert result["providers"]["mem0"]["fields"]["user_id"]["value"] == "u1"
+    assert result["redactions"] == ["mem0.MEM0_API_KEY"]
+    assert "secret" not in str(result)
+
+
 def _memory_file(home: Path, target: str = "memory") -> Path:
     name = "USER.md" if target == "user" else "MEMORY.md"
     return home / "memories" / name

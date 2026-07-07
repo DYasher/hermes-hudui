@@ -274,47 +274,6 @@ def commit_memory_history_candidate(body: MemoryHistoryCommitBody):
     }
 
 
-def _provider_export_payload() -> dict[str, Any]:
-    provider_payload = memory_provider_service.provider_payload()
-    active_provider = provider_payload["active_provider"]
-    redactions: list[str] = []
-    providers: dict[str, Any] = {}
-
-    for provider_id, provider in provider_payload["providers"].items():
-        exported_fields: dict[str, Any] = {}
-        for field in provider.get("config_fields", []):
-            name = field["name"]
-            current = provider.get("config_values", {}).get(name, {})
-            configured = bool(current.get("configured"))
-            secret = bool(field.get("secret"))
-            exported_fields[name] = {
-                "label": field.get("label", name),
-                "storage": field.get("storage", ""),
-                "source": current.get("source") or field.get("path") or field.get("storage", ""),
-                "configured": configured,
-                "redacted": secret and configured,
-                "value": "" if secret else str(current.get("value") or ""),
-            }
-            if secret and configured:
-                redactions.append(f"{provider_id}.{name}")
-
-        if provider_id == active_provider or any(field["configured"] for field in exported_fields.values()):
-            providers[provider_id] = {
-                "label": provider.get("label", provider_id),
-                "storage": provider.get("storage", ""),
-                "active": bool(provider.get("active")),
-                "configured": bool(provider.get("configured")),
-                "current_mode": provider.get("current_mode", ""),
-                "fields": exported_fields,
-            }
-
-    return {
-        "active_provider": active_provider,
-        "providers": providers,
-        "redactions": redactions,
-    }
-
-
 @router.get("/memory/export")
 def get_memory_export():
     """Return a redacted memory export payload."""
@@ -326,7 +285,7 @@ def get_memory_export():
             for target in ("memory", "user")
         },
         "settings": memory_service.memory_settings_payload(),
-        "provider": _provider_export_payload(),
+        "provider": memory_provider_service.provider_export_payload(),
     }
 
 
