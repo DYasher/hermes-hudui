@@ -59,6 +59,18 @@ def hermes_home(tmp_path: Path, monkeypatch) -> Path:
     return tmp_path
 
 
+def test_memory_provider_service_payload_matches_api_contract(hermes_home: Path) -> None:
+    from backend.services.memory_provider_service import provider_payload
+
+    result = provider_payload()
+
+    assert result["builtin"] == {"enabled": True, "sources": ["MEMORY.md", "USER.md"]}
+    assert result["active_provider"] == ""
+    assert result["providers"]["honcho"]["schema_source"]["kind"] == "official_schema"
+    assert result["providers"]["cognee"]["external_view"]["view_type"] == "summary"
+    assert result["providers"]["holographic"]["external_view"]["view_type"] == "facts"
+
+
 def _memory_file(home: Path, target: str = "memory") -> Path:
     name = "USER.md" if target == "user" else "MEMORY.md"
     return home / "memories" / name
