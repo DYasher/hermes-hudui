@@ -123,7 +123,11 @@ def test_feedback_polish_handles_long_model_names_and_lighter_glass() -> None:
     assert "--hud-soft-block:" in css
     assert "--hud-solid-block:" in css
 
-    assert "background: 'var(--hud-bg-panel)'" not in memory_panel
+    memory_panel_without_picker = (
+        memory_panel.split("function ProviderPicker", 1)[0]
+        + memory_panel.split("function ProviderStatusCards", 1)[1]
+    )
+    assert "background: 'var(--hud-bg-panel)'" not in memory_panel_without_picker
     assert "background: 'var(--hud-bg-surface)'" not in memory_panel
     assert "background: 'var(--hud-bg-deep)'" not in memory_panel
     assert "background: 'var(--hud-bg-panel)'" not in skills_panel

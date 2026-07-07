@@ -1547,6 +1547,10 @@ function ProviderPicker({
 }) {
   const { t } = useTranslation()
   const groups = providerGroups(providers)
+  const providerPickerOptionStyle = {
+    background: 'var(--hud-bg-panel)',
+    color: 'var(--hud-text)',
+  }
 
   return (
     <label className="block">
@@ -1564,15 +1568,15 @@ function ProviderPicker({
           color: 'var(--hud-text)',
         }}
       >
-        {!providers.length && <option value="">{t('memory.notConfigured')}</option>}
+        {!providers.length && <option value="" style={providerPickerOptionStyle}>{t('memory.notConfigured')}</option>}
         {groups.map(group => (
-          <optgroup key={group.id} label={t(group.labelKey)}>
+          <optgroup key={group.id} label={t(group.labelKey)} style={providerPickerOptionStyle}>
             {group.providers.map(item => {
               const status = item.id === activeId
                 ? t('memory.activeProvider')
                 : item.configured ? t('memory.providerConfiguredSuffix') : readinessText(item)
               return (
-                <option key={item.id} value={item.id}>
+                <option key={item.id} value={item.id} style={providerPickerOptionStyle}>
                   {item.label} - {status}
                 </option>
               )

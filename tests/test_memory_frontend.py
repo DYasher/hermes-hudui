@@ -210,6 +210,18 @@ def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_st
     assert "'memory.providerConfiguredSuffix'" in translations
 
 
+def test_memory_panel_styles_provider_select_options_for_theme_contrast() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    provider_picker = panel.split("function ProviderPicker", 1)[1].split("function ProviderStatusCards", 1)[0]
+
+    assert "providerPickerOptionStyle" in provider_picker
+    assert "background: 'var(--hud-bg-panel)'" in provider_picker
+    assert "color: 'var(--hud-text)'" in provider_picker
+    assert '<option value="" style={providerPickerOptionStyle}>' in provider_picker
+    assert '<optgroup key={group.id} label={t(group.labelKey)} style={providerPickerOptionStyle}>' in provider_picker
+    assert '<option key={item.id} value={item.id} style={providerPickerOptionStyle}>' in provider_picker
+
+
 def test_memory_panel_uses_backend_provider_group_metadata() -> None:
     panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
 
