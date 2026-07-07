@@ -95,6 +95,14 @@ def test_memory_panel_renders_read_only_provider_health_summary() -> None:
     assert "'memory.lastChecked'" in translations
 
 
+def test_memory_panel_checks_status_for_selected_provider_mode() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+
+    assert "async function checkMemoryProviderStatus(provider: string, selectedMode = '')" in panel
+    assert "body: JSON.stringify({ provider, mode: selectedMode })" in panel
+    assert "checkMemoryProviderStatus(detailProvider.id, selectedMode)" in panel
+
+
 def test_memory_panel_renders_provider_capability_matrix_and_schema_source() -> None:
     panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
     translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()

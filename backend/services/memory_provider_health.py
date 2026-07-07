@@ -168,10 +168,10 @@ def _http_probe(label: str, base_url: str, paths: list[str]) -> dict[str, Any]:
     }
 
 
-def provider_runtime_checks(provider: str) -> dict[str, Any]:
+def provider_runtime_checks(provider: str, mode: str = "") -> dict[str, Any]:
     info = MEMORY_PROVIDER_OPTIONS[provider]
     values = memory_provider_config.provider_config_values(provider)
-    mode = memory_provider_config.current_config_mode(info, values)
+    mode = memory_provider_config.validate_config_mode(info, mode) or memory_provider_config.current_config_mode(info, values)
     probe = RUNTIME_PROBE_FIELDS.get((provider, mode))
     if not probe:
         return {

@@ -1043,6 +1043,46 @@ def test_memory_provider_check_runs_agentmemory_runtime_probe(monkeypatch, herme
     assert runtime["checks"][0]["status_code"] == 200
 
 
+def test_memory_provider_check_uses_selected_config_mode_for_runtime_probe(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "LLM_API_KEY=secret\n"
+        "COGNEE_API_URL=http://127.0.0.1:8000\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/hermes",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
+    )
+
+    seen_urls: list[str] = []
+
+    class FakeResponse:
+        def getcode(self) -> int:
+            return 200
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_urls.append(request.full_url)
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_health.urlopen", fake_urlopen)
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="cognee", mode="docker_api"))
+
+    assert seen_urls == ["http://127.0.0.1:8000/health"]
+    runtime = result["health"]["runtime"]
+    assert runtime["ok"] is True
+    assert runtime["mode"] == "docker_api"
+    assert runtime["checks"][0]["name"] == "Cognee API"
+
+
 def test_memory_provider_check_runs_official_status_command(monkeypatch, hermes_home: Path) -> None:
     _config_file(hermes_home).write_text("memory:\n  provider: honcho\n", encoding="utf-8")
 

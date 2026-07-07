@@ -361,11 +361,11 @@ async function saveMemoryProviderConfig(
   return res.json()
 }
 
-async function checkMemoryProviderStatus(provider: string): Promise<MemoryProviderCheckResult> {
+async function checkMemoryProviderStatus(provider: string, selectedMode = ''): Promise<MemoryProviderCheckResult> {
   const res = await fetch('/api/memory/providers/check', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider }),
+    body: JSON.stringify({ provider, mode: selectedMode }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -2395,7 +2395,7 @@ function MemoryProvidersPanel({
     setError('')
     setNotice('')
     try {
-      const result = await checkMemoryProviderStatus(detailProvider.id)
+      const result = await checkMemoryProviderStatus(detailProvider.id, selectedMode)
       setStatusResult(result)
       onMutate()
     } catch (e: any) {

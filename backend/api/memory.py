@@ -382,6 +382,7 @@ class DeleteBody(BaseModel):
 
 class MemoryProviderBody(BaseModel):
     provider: str = ""
+    mode: str = ""
 
 
 class MemoryProviderConfigBody(BaseModel):
@@ -465,10 +466,27 @@ def check_memory_provider_status(body: MemoryProviderBody):
     if provider:
         provider_payload = payload["providers"].get(provider)
         if provider_payload:
+            info = MEMORY_PROVIDER_OPTIONS[provider]
+            values = memory_provider_config.provider_config_values(provider)
+            mode = memory_provider_config.validate_config_mode(info, body.mode)
+            if mode:
+                configured, missing_fields, missing_any = memory_provider_config.required_state_for_mode(
+                    info,
+                    values,
+                    mode,
+                )
+                required_config = {
+                    "ok": configured,
+                    "missing_fields": missing_fields,
+                    "missing_any": missing_any,
+                }
+            else:
+                required_config = provider_payload["health"]["required_config"]
             health = {
                 **provider_payload["health"],
                 "checked_at": memory_provider_health.utc_now_iso(),
-                "runtime": memory_provider_health.provider_runtime_checks(provider),
+                "required_config": required_config,
+                "runtime": memory_provider_health.provider_runtime_checks(provider, mode),
                 "status_command": status,
             }
 
