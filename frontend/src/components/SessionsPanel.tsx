@@ -22,7 +22,7 @@ function TranscriptViewer({ sessionId, onClose }: { sessionId: string; onClose: 
       <div
         className="flex flex-col w-full max-w-3xl mx-4 rounded"
         style={{
-          background: 'var(--hud-bg-panel)',
+          background: 'var(--hud-solid-block)',
           border: '1px solid var(--hud-border)',
           maxHeight: '80vh',
           boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
@@ -213,7 +213,7 @@ export default function SessionsPanel() {
             placeholder={t('sessions.searchSessions')}
             className="flex-1 px-2 py-1 text-[13px] outline-none"
             style={{
-              background: 'var(--hud-bg-deep)',
+              background: 'var(--hud-soft-block)',
               border: '1px solid var(--hud-border)',
               color: 'var(--hud-text)',
             }}

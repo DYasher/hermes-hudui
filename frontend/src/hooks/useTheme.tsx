@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 
-export type ThemeId = 'ai' | 'hermes-official' | 'blade-runner' | 'fsociety' | 'anime'
+export type ThemeId =
+  | 'hermes-official'
+  | 'graphite'
+  | 'aurora'
+  | 'sunset'
+  | 'ai'
+  | 'blade-runner'
+  | 'fsociety'
+  | 'anime'
 
 const THEME_STORAGE_KEY = 'hud-theme'
 const SCANLINES_STORAGE_KEY = 'hud-scanlines'
@@ -38,7 +46,7 @@ export function resolvePanelBackground(panelBackground: string, panelBackgroundA
 export function syncPanelBackground(panelBackground: string) {
   const next = panelBackground.trim()
   document.documentElement.style.setProperty('--hud-panel-bg-image', next ? toCssImage(next) : 'none')
-  document.documentElement.style.setProperty('--hud-panel-bg-opacity', next ? '0.3' : '0')
+  document.documentElement.style.setProperty('--hud-panel-bg-opacity', next ? '0.38' : '0')
 }
 
 interface ThemeContextValue {
@@ -64,8 +72,11 @@ const ThemeContext = createContext<ThemeContextValue>({
 })
 
 export const THEMES: { id: ThemeId; labelKey: string; icon: string }[] = [
-  { id: 'ai', labelKey: 'theme.neuralAwakening', icon: '◆' },
   { id: 'hermes-official', labelKey: 'theme.hermesOfficial', icon: '☤' },
+  { id: 'graphite', labelKey: 'theme.graphite', icon: '◼' },
+  { id: 'aurora', labelKey: 'theme.aurora', icon: '✦' },
+  { id: 'sunset', labelKey: 'theme.sunset', icon: '◐' },
+  { id: 'ai', labelKey: 'theme.neuralAwakening', icon: '◆' },
   { id: 'blade-runner', labelKey: 'theme.bladeRunner', icon: '◈' },
   { id: 'fsociety', labelKey: 'theme.fsociety', icon: '▣' },
   { id: 'anime', labelKey: 'theme.anime', icon: '◎' },

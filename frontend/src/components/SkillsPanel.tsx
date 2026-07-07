@@ -428,14 +428,14 @@ function SkillItem({
           <span
             className="text-[11px] px-1"
             style={{
-              background: skill.enabled === false ? 'var(--hud-bg-panel)' : 'var(--hud-primary)',
+              background: skill.enabled === false ? 'var(--hud-soft-block)' : 'var(--hud-primary)',
               color: skill.enabled === false ? 'var(--hud-warning)' : 'var(--hud-bg-deep)',
             }}
           >
             {skill.enabled === false ? t('skills.disabled') : t('skills.enabled')}
           </span>
           {variant === 'recent' && (
-            <span className="text-[13px] px-1" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text-dim)' }}>
+            <span className="text-[13px] px-1" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
               {categoryDisplay.label}
             </span>
           )}
@@ -502,7 +502,7 @@ function MarkdownPane({
         style={{
           color: tone === 'translation' ? 'var(--hud-accent)' : 'var(--hud-primary)',
           borderBottom: '1px solid var(--hud-border)',
-          background: 'var(--hud-bg-panel)',
+          background: 'var(--hud-solid-block)',
         }}
       >
         {title}
@@ -812,7 +812,7 @@ function SkillDetailModal({
       <div
         className="w-full max-w-7xl h-[92vh] min-h-0 flex flex-col overflow-hidden"
         style={{
-          background: 'var(--hud-bg-surface)',
+          background: 'var(--hud-solid-block)',
           border: '1px solid var(--hud-border)',
           boxShadow: '0 12px 48px rgba(0,0,0,0.62)',
         }}
@@ -825,7 +825,7 @@ function SkillDetailModal({
               </div>
               <div className="mt-1 flex flex-wrap gap-2 text-[12px]">
                 {detailCategoryDisplay && (
-                  <span className="px-1.5 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-primary)' }}>
+                  <span className="px-1.5 py-0.5" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-primary)' }}>
                     {detailCategoryDisplay.label}
                   </span>
                 )}
@@ -929,7 +929,7 @@ function SkillDetailModal({
                 onChange={event => updateTranslationProvider(event.target.value)}
                 data-skill-translation-provider
                 className="w-full px-2 py-1.5 text-[12px] outline-none"
-                style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
               >
                 <option value="">{t('skills.translationProvider')}</option>
                 {providerOptions.map(provider => (
@@ -946,7 +946,7 @@ function SkillDetailModal({
                 onChange={event => updateTranslationModel(event.target.value)}
                 data-skill-translation-model
                 className="w-full px-2 py-1.5 text-[12px] outline-none font-mono"
-                style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
               >
                 <option value="">{t('skills.translationModel')}</option>
                 {modelDisplayOptions.map(model => (
@@ -1005,7 +1005,7 @@ function SkillDetailModal({
               onChange={event => setEditorContent(event.target.value)}
               data-skill-editor
               className="w-full h-full min-h-0 resize-none p-3 font-mono text-[13px] outline-none"
-              style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+              style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
             />
           )}
           {!error && isCurrentDetail && data && !isEditing && (
@@ -1067,7 +1067,7 @@ function SkillCreateModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
-      <div className="w-full max-w-3xl max-h-[90vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-bg-surface)', border: '1px solid var(--hud-border)' }}>
+      <div className="w-full max-w-3xl max-h-[90vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
         <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
           <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.newSkill')}</div>
           <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
@@ -1078,20 +1078,20 @@ function SkillCreateModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
               <span className="block mb-1">{t('skills.category')}</span>
-              <input value={category} onChange={event => setCategory(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+              <input value={category} onChange={event => setCategory(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
             </label>
             <label className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
               <span className="block mb-1">{t('skills.skillName')}</span>
-              <input value={name} onChange={event => setName(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+              <input value={name} onChange={event => setName(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
             </label>
           </div>
           <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
             <span className="block mb-1">{t('skills.description')}</span>
-            <input value={description} onChange={event => setDescription(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            <input value={description} onChange={event => setDescription(event.target.value)} className="w-full px-2 py-1.5 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
           </label>
           <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
             <span className="block mb-1">SKILL.md</span>
-            <textarea value={content} onChange={event => setContent(event.target.value)} className="w-full h-64 resize-none p-3 font-mono text-[13px] outline-none" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            <textarea value={content} onChange={event => setContent(event.target.value)} className="w-full h-64 resize-none p-3 font-mono text-[13px] outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
           </label>
           {error && <div className="text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
         </div>
@@ -1137,7 +1137,7 @@ function SkillImportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
-      <div className="w-full max-w-2xl max-h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-bg-surface)', border: '1px solid var(--hud-border)' }}>
+      <div className="w-full max-w-2xl max-h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
         <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
           <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.importZip')}</div>
           <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
@@ -1160,7 +1160,7 @@ function SkillImportModal({
           {result?.items && (
             <div className="space-y-1">
               {result.items.map((item: any) => (
-                <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text-dim)' }}>
+                <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
                   <span style={{ color: item.status === 'installed' ? 'var(--hud-primary)' : 'var(--hud-warning)' }}>{item.status}</span>
                   {' '} {item.category}/{item.name}
                 </div>
@@ -1223,7 +1223,7 @@ function SkillMarketModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
-      <div className="w-full max-w-4xl h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-bg-surface)', border: '1px solid var(--hud-border)' }}>
+      <div className="w-full max-w-4xl h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
         <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
           <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.skillMarket')}</div>
           <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
@@ -1232,13 +1232,13 @@ function SkillMarketModal({
         </div>
         <div className="shrink-0 p-4 border-b" style={{ borderColor: 'var(--hud-border)' }}>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_160px_auto] gap-2">
-            <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('skills.searchMarket')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
-            <select value={source} onChange={event => setSource(event.target.value)} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
+            <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('skills.searchMarket')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            <select value={source} onChange={event => setSource(event.target.value)} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
               {['official', 'all', 'skills-sh', 'github', 'clawhub', 'lobehub', 'browse-sh'].map(option => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
-            <input value={category} onChange={event => setCategory(event.target.value)} placeholder={t('skills.category')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
+            <input value={category} onChange={event => setCategory(event.target.value)} placeholder={t('skills.category')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
             <button type="button" onClick={submitSearch} disabled={busy === 'search'} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
               {busy === 'search' ? '...' : t('skills.search')}
             </button>
@@ -1251,7 +1251,7 @@ function SkillMarketModal({
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
           {items.map(item => (
-            <div key={item.identifier} className="p-3 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+            <div key={item.identifier} className="p-3 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-solid-block)' }}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[14px] font-bold truncate" style={{ color: 'var(--hud-primary)' }}>{item.name}</div>
@@ -1458,10 +1458,10 @@ export default function SkillsPanel() {
         <Panel title={t('dashboard.skillLibrary')} className="h-full min-h-0" noPadding>
           <div className="shrink-0 p-3 border-b" style={{ borderColor: 'var(--hud-border)' }}>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-primary)' }}>
+              <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-primary)' }}>
                 {data?.total || 0} {t('dashboard.total')}
               </span>
-              <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-accent)' }}>
+              <span className="text-[13px] px-2 py-0.5" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-accent)' }}>
                 {data?.custom_count || 0} {t('dashboard.custom')}
               </span>
               <span className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
@@ -1510,7 +1510,7 @@ export default function SkillsPanel() {
                       {categoryDisplay.description}
                     </span>
                   </span>
-                  <div className="flex-1 h-[6px]" style={{ background: 'var(--hud-bg-panel)' }}>
+                  <div className="flex-1 h-[6px]" style={{ background: 'var(--hud-solid-block)' }}>
                     <div
                       style={{
                         width: `${pct}%`,

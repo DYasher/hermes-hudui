@@ -22,48 +22,56 @@ function ExecutiveSummary({ summary }: { summary: any }) {
       value: `${health.broken || 0} / ${health.warnings || 0}`,
       meta: t('dashboard.brokenWarnings'),
       color: health.broken ? 'var(--hud-error)' : health.warnings ? 'var(--hud-warning)' : 'var(--hud-success)',
+      cardClassName: '',
+      valueClassName: '',
     },
     {
       label: t('dashboard.spendPulse'),
       value: money(spend.today_usd),
       meta: `${spend.trend_delta_usd >= 0 ? '+' : ''}${money(spend.trend_delta_usd)} ${t('dashboard.sevenDayDelta')}`,
       color: spend.trend_delta_usd > 0 ? 'var(--hud-warning)' : 'var(--hud-success)',
+      cardClassName: '',
+      valueClassName: '',
     },
     {
       label: t('dashboard.modelPulse'),
       value: model.top_model || '-',
       meta: `${model.top_provider || '-'} · ${(model.total_tokens || 0).toLocaleString()} ${t('dashboard.tokens')}`,
       color: 'var(--hud-primary)',
+      cardClassName: '',
+      valueClassName: '',
     },
     {
       label: t('dashboard.riskPulse'),
       value: `${risks.provider_warnings || 0} / ${risks.gateway_unavailable_tools || 0}`,
       meta: t('dashboard.providerGateway'),
       color: (risks.provider_warnings || risks.gateway_unavailable_tools) ? 'var(--hud-warning)' : 'var(--hud-success)',
+      cardClassName: '',
+      valueClassName: '',
     },
   ]
 
   return (
-    <Panel title={t('dashboard.executiveSummary')} className="col-span-full">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+    <Panel title={t('dashboard.executiveSummary')} className="col-span-full dashboard-hero">
+      <div className="dashboard-metric-grid mb-4">
         {cards.map((card) => (
-          <div key={card.label} className="p-2 border" style={{ borderColor: 'var(--hud-border)' }}>
-            <div className="text-[11px] uppercase tracking-widest" style={{ color: 'var(--hud-text-dim)' }}>{card.label}</div>
-            <div className="text-[15px] font-bold truncate" style={{ color: card.color }}>{card.value}</div>
-            <div className="text-[11px] truncate" style={{ color: 'var(--hud-text-dim)' }}>{card.meta}</div>
+          <div key={card.label} className={`dashboard-metric-card ${card.cardClassName}`.trim()}>
+            <div className="dashboard-metric-label">{card.label}</div>
+            <div className={`dashboard-metric-value ${card.valueClassName}`.trim()} style={{ color: card.color }}>{card.value}</div>
+            <div className="dashboard-metric-meta truncate">{card.meta}</div>
           </div>
         ))}
       </div>
       {spend.top_session?.title && (
-        <div className="text-[12px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+        <div className="dashboard-list-card mb-3 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
           {t('dashboard.topCostSession')}: <span style={{ color: 'var(--hud-text)' }}>{spend.top_session.title}</span> {money(spend.top_session.cost_usd)}
         </div>
       )}
-      <div className="text-[12px] space-y-1">
+      <div className="dashboard-signal-list text-[12px] space-y-2">
         {actions.length === 0 ? (
-          <div style={{ color: 'var(--hud-success)' }}>{t('dashboard.noActionItems')}</div>
+          <div className="dashboard-list-card" style={{ color: 'var(--hud-success)' }}>{t('dashboard.noActionItems')}</div>
         ) : actions.slice(0, 5).map((action: any) => (
-          <div key={`${action.source}:${action.label}`} className="flex items-center gap-2">
+          <div key={`${action.source}:${action.label}`} className="dashboard-list-card flex items-center gap-2">
             <span style={{ color: action.severity === 'broken' ? 'var(--hud-error)' : 'var(--hud-warning)' }}>
               {action.severity === 'broken' ? '!' : '•'}
             </span>
@@ -83,18 +91,18 @@ function IdentityBlock({ state, health }: { state: any; health: any }) {
   const days = dr?.[0] ? Math.floor((new Date(dr[1]).getTime() - new Date(dr[0]).getTime()) / 86400000) + 1 : 0
 
   return (
-    <div className="dashboard-glass-block text-[13px] space-y-1 mb-4 p-3" style={{ borderLeft: '3px solid var(--hud-primary)' }}>
-      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.designation')}</span>  <span className="font-bold gradient-text">HERMES</span></div>
-      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.substrate')}</span>  {config?.provider || '?'}/{config?.model || '?'}</div>
-      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.runtime')}</span>  {config?.backend || '—'}</div>
-      {days > 0 && <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.conscious')}</span>  {days} {t('dashboard.days')} <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.since')} {new Date(dr![0]).toLocaleDateString()}</span></div>}
+    <div className="dashboard-section-card dashboard-section-card--identity text-[13px] space-y-1.5 mb-4">
+      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.designation')}</span> <span className="font-bold gradient-text">HERMES</span></div>
+      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.substrate')}</span> {config?.provider || '?'}/{config?.model || '?'}</div>
+      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.runtime')}</span> {config?.backend || '—'}</div>
+      {days > 0 && <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.conscious')}</span> {days} {t('dashboard.days')} <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.since')} {new Date(dr![0]).toLocaleDateString()}</span></div>}
       {health?.state_db_size > 0 && (
-        <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.brainSize')}</span>  {(health.state_db_size / 1048576).toFixed(1)} MB <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.statedb')}</span></div>
+        <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.brainSize')}</span> {(health.state_db_size / 1048576).toFixed(1)} MB <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.statedb')}</span></div>
       )}
       {config?.toolsets?.length > 0 && (
-        <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.interfaces')}</span>  {config.toolsets.join(', ')}</div>
+        <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.interfaces')}</span> {config.toolsets.join(', ')}</div>
       )}
-      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.purpose')}</span>  {t('dashboard.learning')}</div>
+      <div><span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.purpose')}</span> {t('dashboard.learning')}</div>
     </div>
   )
 }
@@ -106,39 +114,39 @@ function WhatIKnow({ sessions, skills }: { sessions: any; skills: any }) {
 
   return (
     <Panel title={t('dashboard.whatIKnow')}>
-      <div className="text-[13px] space-y-1.5">
-        <div className="flex items-center gap-1">
-          <span style={{ color: 'var(--hud-primary)' }}>◉</span>
+      <div className="dashboard-section-stack text-[13px] space-y-2">
+        <div className="dashboard-list-card flex items-center gap-1.5">
+          <span className="dashboard-list-accent">◉</span>
           <span className="font-bold">{sessions?.total_sessions}</span>
           <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.conversationsHeld')}</span>
           {platformParts.length > 0 && <span style={{ color: 'var(--hud-text-dim)' }}>({platformParts.join(', ')})</span>}
         </div>
-        <div className="flex items-center gap-1">
-          <span style={{ color: 'var(--hud-primary)' }}>◉</span>
+        <div className="dashboard-list-card flex items-center gap-1.5">
+          <span className="dashboard-list-accent">◉</span>
           <span className="font-bold">{(sessions?.total_messages || 0).toLocaleString()}</span>
           <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.messagesExchanged')}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <span style={{ color: 'var(--hud-primary)' }}>◉</span>
+        <div className="dashboard-list-card flex items-center gap-1.5">
+          <span className="dashboard-list-accent">◉</span>
           <span className="font-bold">{(sessions?.total_tool_calls || 0).toLocaleString()}</span>
           <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.actionsTaken')}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <span style={{ color: 'var(--hud-primary)' }}>◉</span>
+        <div className="dashboard-list-card flex items-center gap-1.5">
+          <span className="dashboard-list-accent">◉</span>
           <span className="font-bold">{skills?.total}</span>
           <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.skillsAcquired')}</span>
           <span style={{ color: 'var(--hud-primary-dim)' }}>({skills?.custom_count} {t('dashboard.selfTaught')})</span>
         </div>
         {skills?.category_counts && (
-          <div style={{ color: 'var(--hud-text-dim)' }}>
+          <div className="dashboard-list-card" style={{ color: 'var(--hud-text-dim)' }}>
             {t('dashboard.domains')}: {Object.entries(skills.category_counts as Record<string, number>)
               .sort((a: any, b: any) => b[1] - a[1])
               .slice(0, 4)
               .map(([c, n]) => `${c}:${n}`).join(', ')}
           </div>
         )}
-        <div className="flex items-center gap-1">
-          <span style={{ color: 'var(--hud-primary)' }}>◉</span>
+        <div className="dashboard-list-card flex items-center gap-1.5">
+          <span className="dashboard-list-accent">◉</span>
           <span className="font-bold">{(sessions?.total_tokens || 0).toLocaleString()}</span>
           <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.tokensProcessed')}</span>
         </div>
@@ -165,7 +173,7 @@ function WhatIRemember({ memory, user, corrections, sessions }: { memory: any; u
       <CapacityBar value={memory?.total_chars || 0} max={memory?.max_chars || 2200} label={t('dashboard.memory')} />
       <CapacityBar value={user?.total_chars || 0} max={user?.max_chars || 1375} label={t('dashboard.user')} />
       {corrections?.total > 0 && (
-        <div className="mt-2 text-[13px] flex items-center gap-1">
+        <div className="mt-3 dashboard-list-card text-[13px] flex items-center gap-1.5">
           <span style={{ color: 'var(--hud-warning)' }}>◉</span>
           <span className="font-bold" style={{ color: 'var(--hud-warning)' }}>{corrections.total}</span>
           <span style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.mistakesRemembered')}</span>
@@ -176,20 +184,20 @@ function WhatIRemember({ memory, user, corrections, sessions }: { memory: any; u
         </div>
       )}
       <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--hud-border)' }}>
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="dashboard-chip-grid mb-3">
           {[
             [t('dashboard.messages'), totalMessages.toLocaleString()],
             [t('dashboard.days'), days.toLocaleString()],
             [t('dashboard.correctedTimes'), totalCorrections.toLocaleString()],
           ].map(([label, value]) => (
-            <div key={String(label)} className="dashboard-glass-chip px-2 py-1.5 border" style={{ borderColor: 'var(--hud-border)' }}>
+            <div key={String(label)} className="dashboard-glass-chip px-3 py-2 border" style={{ borderColor: 'var(--hud-border)' }}>
               <div className="text-[10px] uppercase tracking-widest truncate" style={{ color: 'var(--hud-text-dim)' }}>{label}</div>
               <div className="text-[14px] font-bold" style={{ color: 'var(--hud-primary)' }}>{value}</div>
             </div>
           ))}
         </div>
         <div
-          className="dashboard-glass-callout px-3 py-2 text-[13px] space-y-1"
+          className="dashboard-glass-callout px-3 py-3 text-[13px] space-y-1"
           style={{
             borderLeft: '3px solid var(--hud-accent)',
             color: 'var(--hud-primary)',
@@ -212,9 +220,9 @@ function WhatISee({ health }: { health: any }) {
 
   return (
     <Panel title={t('dashboard.whatISee')}>
-      <div className="text-[13px] space-y-0.5 mb-2">
+      <div className="dashboard-section-stack text-[13px] space-y-2 mb-3">
         {keys.map((k: any, i: number) => (
-          <div key={i} className="flex items-center gap-1">
+          <div key={i} className="dashboard-list-card flex items-center gap-1.5">
             <span style={{ color: k.present ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
               {k.present ? '◉' : '○'}
             </span>
@@ -223,9 +231,9 @@ function WhatISee({ health }: { health: any }) {
           </div>
         ))}
       </div>
-      <div className="text-[13px] space-y-0.5">
+      <div className="dashboard-signal-list text-[13px] space-y-2">
         {services.map((s: any, i: number) => (
-          <div key={i} className="flex items-center gap-1">
+          <div key={i} className="dashboard-list-card flex items-center gap-1.5">
             <span style={{ color: s.running ? 'var(--hud-secondary)' : 'var(--hud-text-dim)' }}>
               ▸
             </span>
@@ -248,9 +256,9 @@ function WhatImLearning({ skills }: { skills: any }) {
 
   return (
     <Panel title={t('dashboard.whatImLearning')}>
-      <div className="text-[13px] space-y-1.5">
+      <div className="dashboard-section-stack text-[13px] space-y-2">
         {recent.slice(0, 5).map((s: any) => (
-          <div key={s.name} className="flex items-center gap-1">
+          <div key={s.name} className="dashboard-list-card flex items-center gap-1.5">
             <span style={{ color: 'var(--hud-primary)' }}>◉</span>
             <span className="font-bold">{s.name}</span>
             <span style={{ color: 'var(--hud-text-dim)' }}>{s.category}</span>
@@ -270,9 +278,9 @@ function WhatImWorkingOn({ projects }: { projects: any }) {
 
   return (
     <Panel title={t('dashboard.whatImWorkingOn')}>
-      <div className="text-[13px] space-y-1.5">
+      <div className="dashboard-section-stack text-[13px] space-y-2">
         {active.map((p: any) => (
-          <div key={p.name} className="flex items-center gap-1">
+          <div key={p.name} className="dashboard-list-card flex items-center gap-1.5">
             <span style={{ color: 'var(--hud-primary)' }}>◆</span>
             <span className="font-bold">{p.name}</span>
             {p.dirty_files > 0 && <span style={{ color: 'var(--hud-warning)' }}>({p.dirty_files} {t('dashboard.inFlux')})</span>}
@@ -293,9 +301,9 @@ function WhatRunsWhileYouSleep({ cron }: { cron: any }) {
 
   return (
     <Panel title={t('dashboard.whatRunsWhileYouSleep')}>
-      <div className="text-[13px] space-y-1.5">
+      <div className="dashboard-section-stack text-[13px] space-y-2">
         {jobs.map((j: any) => (
-          <div key={j.id} className="flex items-center gap-1">
+          <div key={j.id} className="dashboard-list-card flex items-center gap-1.5">
             <span style={{ color: j.enabled ? 'var(--hud-secondary)' : 'var(--hud-text-dim)' }}>
               {j.enabled ? '◉' : '○'}
             </span>
@@ -322,14 +330,14 @@ function HowIThink({ sessions }: { sessions: any }) {
 
   return (
     <Panel title={t('dashboard.howIThink')}>
-      <div className="text-[13px] space-y-1">
+      <div className="dashboard-signal-list text-[13px] space-y-2">
         {top.map(([tool, count]) => {
           const pct = (count / maxVal) * 100
           return (
-            <div key={tool} className="flex items-center gap-2">
+            <div key={tool} className="dashboard-list-card flex items-center gap-2">
               <span className="w-[130px] truncate" style={{ color: 'var(--hud-text)' }}>{tool}</span>
-              <div className="flex-1 h-[5px]" style={{ background: 'var(--hud-bg-hover)' }}>
-                <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--hud-primary-dim), var(--hud-primary))' }} />
+              <div className="flex-1 h-[6px] rounded-full" style={{ background: 'var(--hud-bg-hover)' }}>
+                <div style={{ width: `${pct}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, var(--hud-primary-dim), var(--hud-primary))' }} />
               </div>
               <span className="tabular-nums w-10 text-right" style={{ color: 'var(--hud-text-dim)' }}>{count}</span>
             </div>
@@ -345,21 +353,21 @@ function MyRhythm({ sessions }: { sessions: any }) {
   const daily = sessions?.daily_stats || []
   if (!daily.length) return null
   const messages = daily.map((d: any) => d.messages)
+  const maxMsgs = Math.max(...daily.map((d: any) => d.messages), 1)
 
   return (
     <Panel title={t('dashboard.myRhythm')}>
-      <div className="mb-2">
+      <div className="dashboard-section-card mb-3">
         <Sparkline values={messages} width={400} height={50} />
       </div>
-      <div className="text-[13px] space-y-0.5">
+      <div className="dashboard-signal-list text-[13px] space-y-2">
         {daily.map((ds: any) => {
-          const maxMsgs = Math.max(...daily.map((d: any) => d.messages), 1)
           const pct = (ds.messages / maxMsgs) * 100
           return (
-            <div key={ds.date} className="flex items-center gap-2">
-              <span className="w-[55px] text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{ds.date}</span>
-              <div className="flex-1 h-[4px]" style={{ background: 'var(--hud-bg-hover)' }}>
-                <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--hud-primary-dim), var(--hud-primary), var(--hud-secondary))' }} />
+            <div key={ds.date} className="dashboard-list-card flex items-center gap-2">
+              <span className="w-[70px] text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{ds.date}</span>
+              <div className="flex-1 h-[6px] rounded-full" style={{ background: 'var(--hud-bg-hover)' }}>
+                <div style={{ width: `${pct}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, var(--hud-primary-dim), var(--hud-primary), var(--hud-secondary))' }} />
               </div>
               <span className="tabular-nums w-8 text-right text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{ds.messages}</span>
             </div>
@@ -375,7 +383,7 @@ function GrowthDelta({ snapshots }: { snapshots: any[] }) {
   if (!snapshots || snapshots.length < 2) {
     return (
       <Panel title={t('dashboard.growthDelta')}>
-        <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
+        <div className="dashboard-list-card text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
           {snapshots?.length === 1 ? t('dashboard.firstSnapshot') : t('dashboard.noSnapshotsYet')}
         </div>
       </Panel>
@@ -396,7 +404,6 @@ function GrowthDelta({ snapshots }: { snapshots: any[] }) {
     { key: 'tokens', label: t('dashboard.tokens') },
   ]
 
-  // Category diff
   const curCats = new Set(current.categories || [])
   const prevCats = new Set(previous.categories || [])
   const newCats = [...curCats].filter(c => !prevCats.has(c))
@@ -404,8 +411,8 @@ function GrowthDelta({ snapshots }: { snapshots: any[] }) {
 
   return (
     <Panel title={t('dashboard.growthDelta')}>
-      <div className="text-[13px]">
-        <div className="flex justify-between mb-2" style={{ color: 'var(--hud-text-dim)' }}>
+      <div className="dashboard-signal-list text-[13px] space-y-2">
+        <div className="dashboard-list-card flex justify-between" style={{ color: 'var(--hud-text-dim)' }}>
           <span>{snapshots.length} {t('dashboard.snapshots')}</span>
           <span>{previous.timestamp?.slice(0, 10)} → {current.timestamp?.slice(0, 10)}</span>
         </div>
@@ -413,14 +420,16 @@ function GrowthDelta({ snapshots }: { snapshots: any[] }) {
           const cur = current[key] || 0
           const prev = previous[key] || 0
           const delta = cur - prev
-          if (delta === 0) return (
-            <div key={key} className="flex justify-between py-0.5">
-              <span style={{ color: 'var(--hud-text-dim)' }}>= {label}</span>
-              <span>{cur.toLocaleString()}</span>
-            </div>
-          )
+          if (delta === 0) {
+            return (
+              <div key={key} className="dashboard-list-card flex justify-between">
+                <span style={{ color: 'var(--hud-text-dim)' }}>= {label}</span>
+                <span>{cur.toLocaleString()}</span>
+              </div>
+            )
+          }
           return (
-            <div key={key} className="flex justify-between py-0.5">
+            <div key={key} className="dashboard-list-card flex justify-between">
               <span style={{ color: delta > 0 ? 'var(--hud-success)' : 'var(--hud-error)' }}>
                 {delta > 0 ? '↑' : '↓'} {label}
               </span>
@@ -435,10 +444,10 @@ function GrowthDelta({ snapshots }: { snapshots: any[] }) {
           )
         })}
         {newCats.length > 0 && (
-          <div className="mt-1" style={{ color: 'var(--hud-success)' }}>★ {t('dashboard.newCategories')}: {newCats.join(', ')}</div>
+          <div className="dashboard-list-card" style={{ color: 'var(--hud-success)' }}>★ {t('dashboard.newCategories')}: {newCats.join(', ')}</div>
         )}
         {lostCats.length > 0 && (
-          <div className="mt-1" style={{ color: 'var(--hud-error)' }}>✗ {t('dashboard.lostCategories')}: {lostCats.join(', ')}</div>
+          <div className="dashboard-list-card" style={{ color: 'var(--hud-error)' }}>✗ {t('dashboard.lostCategories')}: {lostCats.join(', ')}</div>
         )}
       </div>
     </Panel>
@@ -449,7 +458,6 @@ export default function DashboardPanel() {
   const { t } = useTranslation()
   const { data } = useApi('/dashboard', 30000)
 
-  // Only show loading on initial load, not during background updates
   if (!data) {
     return (
       <Panel title={t('dashboard.title')} className="col-span-full">
@@ -464,25 +472,20 @@ export default function DashboardPanel() {
   return (
     <>
       <ExecutiveSummary summary={executive_summary} />
-
-      {/* Row 1: identity + what I know + what I remember */}
-      <Panel title={t('dashboard.overview')}>
-        <IdentityBlock state={state} health={health} />
-        <WhatIKnow sessions={sessions} skills={skills} />
-      </Panel>
-      <WhatIRemember memory={memory} user={user} corrections={corrections} sessions={sessions} />
-      <WhatISee health={health} />
-
-      {/* Row 2: learning + working on + sleep */}
+      <div className="dashboard-overview-grid col-span-full grid gap-2 lg:grid-cols-[1.25fr_1fr_1fr]">
+        <Panel title={t('dashboard.overview')}>
+          <IdentityBlock state={state} health={health} />
+          <WhatIKnow sessions={sessions} skills={skills} />
+        </Panel>
+        <WhatIRemember memory={memory} user={user} corrections={corrections} sessions={sessions} />
+        <WhatISee health={health} />
+      </div>
       <WhatImLearning skills={skills} />
       <WhatImWorkingOn projects={projects} />
       <WhatRunsWhileYouSleep cron={cron} />
-
-      {/* Row 3: how I think + my rhythm + growth delta */}
       <HowIThink sessions={sessions} />
       <MyRhythm sessions={sessions} />
       <GrowthDelta snapshots={snapshots || []} />
-
     </>
   )
 }

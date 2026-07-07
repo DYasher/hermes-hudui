@@ -55,31 +55,29 @@ export default function ProvidersPanel() {
 
   return (
     <Panel title={t('providers.title')} className="col-span-full">
-      <div className="text-[12px] mb-3" style={{ color: 'var(--hud-text-dim)' }}>
+      <div className="dashboard-list-card text-[12px] mb-3" style={{ color: 'var(--hud-text-dim)' }}>
         {t('providers.subtitle')}
       </div>
       {warnings.length > 0 && (
         <div
-          className="mb-3 space-y-1.5 py-2 px-3 text-[12px]"
+          className="mb-3 space-y-1.5 py-3 px-3 hud-list-card"
           style={{
-            border: '1px solid var(--hud-warning)',
             borderLeft: '3px solid var(--hud-warning)',
-            background: 'var(--hud-panel-alt, transparent)',
             color: 'var(--hud-warning)',
           }}
         >
-          <div className="font-medium">{t('providers.driftWarnings')}</div>
+          <div className="font-medium text-[12px]">{t('providers.driftWarnings')}</div>
           {warnings.map((warning) => (
-            <div key={warning}>● {warning}</div>
+            <div key={warning} className="text-[12px]">● {warning}</div>
           ))}
         </div>
       )}
       {providers.length === 0 && (
-        <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
+        <div className="hud-empty-state text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
           {t('providers.none')}
         </div>
       )}
-      <div className="space-y-2 text-[13px]">
+      <div className="space-y-3 text-[13px]">
         {providers.map((p) => {
           const when = p.expires_at
             ? `${t('providers.expires')} ${timeAgo(p.expires_at)}`
@@ -87,52 +85,54 @@ export default function ProvidersPanel() {
               ? `${t('providers.obtained')} ${timeAgo(p.obtained_at)}`
               : ''
           return (
-          <div
-            key={p.id}
-            className="py-2 px-3"
-            style={{
-              borderLeft: `3px solid ${STATUS_COLOR[p.status]}`,
-              background: p.is_active ? 'var(--hud-panel-alt, transparent)' : 'transparent',
-            }}
-          >
-            <div className="flex justify-between items-baseline">
-              <div className="flex items-baseline gap-2">
-                <span className="font-medium">{p.name}</span>
-                {p.is_active && (
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg)' }}
-                  >
-                    {t('providers.active')}
-                  </span>
-                )}
-                {p.auth_mode && (
-                  <span className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
-                    {p.auth_mode}
-                  </span>
-                )}
+            <div
+              key={p.id}
+              className="hud-list-card"
+              style={{
+                borderLeft: `3px solid ${STATUS_COLOR[p.status]}`,
+                background: p.is_active
+                  ? 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.006) 100%), color-mix(in srgb, var(--hud-glass-panel) 72%, transparent)'
+                  : undefined,
+              }}
+            >
+              <div className="flex justify-between items-baseline gap-3 flex-wrap">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="font-medium">{p.name}</span>
+                  {p.is_active && (
+                    <span
+                      className="text-[10px] px-2 py-1 rounded-full"
+                      style={{ background: 'var(--hud-primary)', color: 'var(--hud-bg)' }}
+                    >
+                      {t('providers.active')}
+                    </span>
+                  )}
+                  {p.auth_mode && (
+                    <span className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
+                      {p.auth_mode}
+                    </span>
+                  )}
+                </div>
+                <span style={{ color: STATUS_COLOR[p.status], fontVariant: 'small-caps' }}>
+                  ● {STATUS_LABEL[p.status]}
+                </span>
               </div>
-              <span style={{ color: STATUS_COLOR[p.status], fontVariant: 'small-caps' }}>
-                ● {STATUS_LABEL[p.status]}
-              </span>
+              <div className="mt-2 flex justify-between gap-3 flex-wrap" style={{ color: 'var(--hud-text-dim)' }}>
+                <span className="font-mono">{p.token_preview || '—'}</span>
+                <span>{when}</span>
+              </div>
+              {p.scope && (
+                <div className="mt-2 dashboard-section-card text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+                  {t('providers.scope')}: {p.scope}
+                </div>
+              )}
+              {(p.warnings ?? []).length > 0 && (
+                <div className="mt-2 space-y-1 text-[11px]" style={{ color: 'var(--hud-warning)' }}>
+                  {(p.warnings ?? []).map((warning) => (
+                    <div key={warning}>● {warning}</div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="mt-1 flex justify-between" style={{ color: 'var(--hud-text-dim)' }}>
-              <span className="font-mono">{p.token_preview || '—'}</span>
-              <span>{when}</span>
-            </div>
-            {p.scope && (
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
-                {t('providers.scope')}: {p.scope}
-              </div>
-            )}
-            {(p.warnings ?? []).length > 0 && (
-              <div className="mt-1 space-y-0.5 text-[11px]" style={{ color: 'var(--hud-warning)' }}>
-                {(p.warnings ?? []).map((warning) => (
-                  <div key={warning}>● {warning}</div>
-                ))}
-              </div>
-            )}
-          </div>
           )
         })}
       </div>

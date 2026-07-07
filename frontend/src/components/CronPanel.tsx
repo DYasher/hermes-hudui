@@ -178,7 +178,7 @@ function CronCreateDrawer({
   }
 
   return (
-    <div className="mb-4 p-3" style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}>
+    <div className="mb-4 p-3" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <FieldLabel>{t('cron.createName')}</FieldLabel>
@@ -370,7 +370,7 @@ function CronCreateDrawer({
       )}
 
       {error && (
-        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-bg-surface)' }}>
+        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-solid-block)' }}>
           {error}
         </div>
       )}
@@ -380,7 +380,7 @@ function CronCreateDrawer({
           onClick={onCancel}
           disabled={busy}
           className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {t('memory.cancel')}
@@ -459,7 +459,7 @@ export default function CronPanel() {
       )}
 
       {error && (
-        <div className="mb-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-bg-surface)' }}>
+        <div className="mb-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-solid-block)' }}>
           {error}
         </div>
       )}
@@ -476,7 +476,7 @@ export default function CronPanel() {
             const isConfirming = confirming === job.id
 
             return (
-              <div key={job.id} className="p-3" style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}>
+              <div key={job.id} className="p-3" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   <span className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: isActive ? 'var(--hud-success)' : 'var(--hud-text-dim)' }} />
@@ -485,7 +485,7 @@ export default function CronPanel() {
                   </span>
                   <span className="text-[13px] px-1.5 py-0.5"
                     style={{
-                      background: 'var(--hud-bg-hover)',
+                      background: 'var(--hud-soft-block)',
                       color: isActive ? 'var(--hud-success)' : 'var(--hud-text-dim)'
                     }}>
                     {job.state || 'unknown'}
@@ -516,7 +516,7 @@ export default function CronPanel() {
                             onClick={() => act(job.id, 'pause')}
                             disabled={!!busy}
                             className="px-2 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
-                            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)' }}
+                            style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)' }}
                           >
                             {isBusy('pause') ? '...' : t('cron.pause')}
                           </button>
@@ -537,7 +537,7 @@ export default function CronPanel() {
                         <button
                           onClick={() => setConfirming(null)}
                           className="px-2 py-0.5 text-[11px] cursor-pointer"
-                          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)' }}
+                          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)' }}
                         >
                           {t('memory.cancel')}
                         </button>
@@ -547,7 +547,7 @@ export default function CronPanel() {
                         onClick={() => setConfirming(job.id)}
                         disabled={!!busy}
                         className="px-2 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
-                        style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-error)' }}
+                        style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-error)' }}
                       >
                         {t('memory.delete')}
                       </button>

@@ -39,8 +39,8 @@ function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?: 'ok' |
   const color = tone === 'ok' ? 'var(--hud-success)' : tone === 'warn' ? 'var(--hud-warning)' : 'var(--hud-text-dim)'
   return (
     <span
-      className="px-1.5 py-0.5 text-[11px] uppercase tracking-widest"
-      style={{ color, border: `1px solid ${color}` }}
+      className="px-2 py-1 text-[11px] uppercase tracking-widest rounded-full"
+      style={{ color, border: `1px solid ${color}`, background: 'color-mix(in srgb, var(--hud-glass-panel) 56%, transparent)' }}
     >
       {label}
     </span>
@@ -102,16 +102,16 @@ export default function PluginsPanel() {
   return (
     <>
       <Panel title={t('plugins.overview')} className="col-span-full">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             [t('plugins.total'), data?.total_plugins || 0],
             [t('plugins.dashboard'), data?.dashboard_count || 0],
             [t('plugins.agent'), data?.agent_count || 0],
             [t('plugins.hidden'), data?.hidden_count || 0],
           ].map(([label, value]) => (
-            <div key={String(label)} className="p-3 border" style={{ borderColor: 'var(--hud-border)' }}>
-              <div className="text-[11px] uppercase tracking-widest" style={{ color: 'var(--hud-text-dim)' }}>{label}</div>
-              <div className="text-2xl font-bold glow" style={{ color: 'var(--hud-primary)' }}>{value}</div>
+            <div key={String(label)} className="hud-stat-tile dashboard-metric-card">
+              <div className="dashboard-metric-label">{label}</div>
+              <div className="dashboard-metric-value glow">{value}</div>
             </div>
           ))}
         </div>
@@ -125,22 +125,21 @@ export default function PluginsPanel() {
             value={installValue}
             onChange={(event) => setInstallValue(event.target.value)}
             placeholder={t('plugins.installPlaceholder')}
-            className="flex-1 px-2 py-1.5 text-[13px] outline-none"
+            className="flex-1 px-3 py-2 text-[13px] outline-none hud-inline-input"
             style={{ background: 'var(--hud-bg)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
           />
           <button
             onClick={() => runAction('install', '/plugins/install', { identifier: installValue })}
             disabled={!installValue.trim() || busy === 'install'}
-            className="px-3 py-1.5 text-[12px] uppercase tracking-widest cursor-pointer disabled:opacity-40"
-            style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}
+            className="hud-toolbar-button px-3 py-2 text-[12px] uppercase tracking-widest cursor-pointer disabled:opacity-40"
+            style={{ color: 'var(--hud-primary)' }}
           >
             {busy === 'install' ? t('plugins.running') : t('plugins.install')}
           </button>
           <button
             onClick={() => runAction('rescan', '/plugins/rescan')}
             disabled={busy === 'rescan'}
-            className="px-3 py-1.5 text-[12px] uppercase tracking-widest cursor-pointer disabled:opacity-40"
-            style={{ color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            className="hud-toolbar-button px-3 py-2 text-[12px] uppercase tracking-widest cursor-pointer disabled:opacity-40"
           >
             {busy === 'rescan' ? t('plugins.running') : t('plugins.rescan')}
           </button>
@@ -150,18 +149,18 @@ export default function PluginsPanel() {
 
       <Panel title={`${t('plugins.title')} — ${plugins.length}`} className="col-span-full">
         {plugins.length === 0 ? (
-          <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>
+          <div className="hud-empty-state text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {plugins.map(plugin => (
-              <div key={plugin.name} className="p-3 border" style={{ borderColor: 'var(--hud-border)' }}>
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[15px] font-semibold" style={{ color: 'var(--hud-text)' }}>{plugin.label}</span>
+              <div key={plugin.name} className="hud-list-card">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[16px] font-semibold" style={{ color: 'var(--hud-text)' }}>{plugin.label}</span>
                       <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{plugin.version}</span>
                     </div>
-                    <div className="text-[12px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>{plugin.description || plugin.name}</div>
+                    <div className="text-[12px] mt-1 leading-5" style={{ color: 'var(--hud-text-dim)' }}>{plugin.description || plugin.name}</div>
                   </div>
                   <div className="flex flex-wrap gap-1 justify-end">
                     <StatusBadge label={plugin.source} />
@@ -171,43 +170,43 @@ export default function PluginsPanel() {
                     {plugin.user_hidden && <StatusBadge label={t('plugins.hidden')} tone="warn" />}
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-[12px]">
-                  <div>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]">
+                  <div className="dashboard-section-card">
                     <span style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.tab')}</span>
-                    <div style={{ color: 'var(--hud-text)' }}>{plugin.has_dashboard_manifest ? plugin.tab_path : t('plugins.noneShort')}</div>
+                    <div className="mt-1 break-all" style={{ color: 'var(--hud-text)' }}>{plugin.has_dashboard_manifest ? plugin.tab_path : t('plugins.noneShort')}</div>
                   </div>
-                  <div>
+                  <div className="dashboard-section-card">
                     <span style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.tools')}</span>
-                    <div style={{ color: 'var(--hud-text)' }}>{plugin.provides_tools.length ? plugin.provides_tools.join(', ') : t('plugins.noneShort')}</div>
+                    <div className="mt-1" style={{ color: 'var(--hud-text)' }}>{plugin.provides_tools.length ? plugin.provides_tools.join(', ') : t('plugins.noneShort')}</div>
                   </div>
-                  <div>
+                  <div className="dashboard-section-card">
                     <span style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.slots')}</span>
-                    <div style={{ color: 'var(--hud-text)' }}>{plugin.slots.length ? plugin.slots.join(', ') : t('plugins.noneShort')}</div>
+                    <div className="mt-1" style={{ color: 'var(--hud-text)' }}>{plugin.slots.length ? plugin.slots.join(', ') : t('plugins.noneShort')}</div>
                   </div>
                 </div>
                 {plugin.auth_required && (
-                  <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-warning)' }}>
+                  <div className="mt-3 dashboard-list-card text-[12px]" style={{ color: 'var(--hud-warning)' }}>
                     {t('plugins.authRequired')}: <span className="font-mono">{plugin.auth_command || `hermes auth ${plugin.name}`}</span>
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {plugin.source === 'user' && plugin.runtime_status !== 'enabled' && (
-                    <button onClick={() => runAction(`enable:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/enable`)} className="px-2 py-1 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-success)', border: '1px solid var(--hud-success)' }}>{t('plugins.enable')}</button>
+                    <button onClick={() => runAction(`enable:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/enable`)} className="hud-toolbar-button px-3 py-1.5 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-success)' }}>{t('plugins.enable')}</button>
                   )}
                   {plugin.source === 'user' && plugin.runtime_status === 'enabled' && (
-                    <button onClick={() => runAction(`disable:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/disable`)} className="px-2 py-1 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-warning)' }}>{t('plugins.disable')}</button>
+                    <button onClick={() => runAction(`disable:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/disable`)} className="hud-toolbar-button px-3 py-1.5 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-warning)' }}>{t('plugins.disable')}</button>
                   )}
                   {plugin.source === 'user' && plugin.has_dashboard_manifest && !plugin.user_hidden && (
-                    <button onClick={() => runAction(`hide:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/hide`)} className="px-2 py-1 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>{t('plugins.hide')}</button>
+                    <button onClick={() => runAction(`hide:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/hide`)} className="hud-toolbar-button px-3 py-1.5 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.hide')}</button>
                   )}
                   {plugin.source === 'user' && plugin.has_dashboard_manifest && plugin.user_hidden && (
-                    <button onClick={() => runAction(`show:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/show`)} className="px-2 py-1 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>{t('plugins.show')}</button>
+                    <button onClick={() => runAction(`show:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/show`)} className="hud-toolbar-button px-3 py-1.5 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-primary)' }}>{t('plugins.show')}</button>
                   )}
                   {plugin.source === 'user' && plugin.can_update_git && (
-                    <button onClick={() => runAction(`update:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/update`)} className="px-2 py-1 text-[11px] uppercase tracking-widest cursor-pointer" style={{ color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>{t('plugins.update')}</button>
+                    <button onClick={() => runAction(`update:${plugin.name}`, `/plugins/${encodeURIComponent(plugin.name)}/update`)} className="hud-toolbar-button px-3 py-1.5 text-[11px] uppercase tracking-widest cursor-pointer">{t('plugins.update')}</button>
                   )}
                 </div>
-                <div className="mt-2 truncate text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>{plugin.path}</div>
+                <div className="mt-3 truncate text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>{plugin.path}</div>
               </div>
             ))}
           </div>
@@ -217,33 +216,33 @@ export default function PluginsPanel() {
       <Panel title={t('plugins.dashboardExtensions')}>
         <div className="space-y-2">
           {dashboardPlugins.length ? dashboardPlugins.map(plugin => (
-            <div key={plugin.name} className="flex items-center justify-between gap-2 text-[13px]">
+            <div key={plugin.name} className="hud-list-card flex items-center justify-between gap-2 text-[13px]">
               <span style={{ color: 'var(--hud-text)' }}>{plugin.label}</span>
               <span style={{ color: 'var(--hud-text-dim)' }}>{plugin.entry || plugin.tab_path}</span>
             </div>
-          )) : <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>}
+          )) : <div className="hud-empty-state text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>}
         </div>
       </Panel>
 
       <Panel title={t('plugins.agentPlugins')}>
         <div className="space-y-2">
           {agentPlugins.length ? agentPlugins.map(plugin => (
-            <div key={plugin.name} className="flex items-center justify-between gap-2 text-[13px]">
+            <div key={plugin.name} className="hud-list-card flex items-center justify-between gap-2 text-[13px]">
               <span style={{ color: 'var(--hud-text)' }}>{plugin.label}</span>
               <StatusBadge label={plugin.runtime_status} tone={pluginTone(plugin)} />
             </div>
-          )) : <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>}
+          )) : <div className="hud-empty-state text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>}
         </div>
       </Panel>
 
       <Panel title={t('plugins.authRequired')}>
         <div className="space-y-2">
           {authPlugins.length ? authPlugins.map(plugin => (
-            <div key={plugin.name} className="text-[13px]">
+            <div key={plugin.name} className="hud-list-card text-[13px]">
               <div style={{ color: 'var(--hud-text)' }}>{plugin.label}</div>
-              <div className="font-mono text-[12px]" style={{ color: 'var(--hud-warning)' }}>{plugin.auth_command || `hermes auth ${plugin.name}`}</div>
+              <div className="font-mono text-[12px] mt-1" style={{ color: 'var(--hud-warning)' }}>{plugin.auth_command || `hermes auth ${plugin.name}`}</div>
             </div>
-          )) : <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>}
+          )) : <div className="hud-empty-state text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('plugins.none')}</div>}
         </div>
       </Panel>
     </>

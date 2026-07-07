@@ -62,7 +62,7 @@ export default function CommandPalette({ commands, onSelect }: CommandPalettePro
       <div
         className="relative w-[400px] max-h-[300px] overflow-hidden"
         style={{
-          background: 'var(--hud-bg-surface)',
+          background: 'var(--hud-solid-block)',
           border: '1px solid var(--hud-border-bright)',
           boxShadow: '0 0 30px var(--hud-primary-glow)',
         }}
@@ -97,7 +97,7 @@ export default function CommandPalette({ commands, onSelect }: CommandPalettePro
             >
               <span>{cmd.label}</span>
               {cmd.shortcut && (
-                <span className="text-[13px] px-1.5 py-0.5" style={{ background: 'var(--hud-bg-panel)', color: 'var(--hud-text-dim)' }}>
+                <span className="text-[13px] px-1.5 py-0.5" style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)' }}>
                   {cmd.shortcut}
                 </span>
               )}

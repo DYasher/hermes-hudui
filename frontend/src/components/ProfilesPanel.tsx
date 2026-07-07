@@ -251,7 +251,7 @@ function ProfileManager({
   }
 
   return (
-    <div className="mb-3 p-3" style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}>
+    <div className="mb-3 p-3" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex-1 min-w-[180px]">
           <FieldLabel>{t('profiles.newName')}</FieldLabel>
@@ -290,7 +290,7 @@ function ProfileManager({
           onClick={() => setShowImport(value => !value)}
           disabled={!!busy}
           className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {t('profiles.importProfile')}
@@ -340,7 +340,7 @@ function ProfileManager({
                 onClick={() => setShowImport(false)}
                 disabled={!!busy}
                 className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+                style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
                 type="button"
               >
                 {t('memory.cancel')}
@@ -360,7 +360,7 @@ function ProfileManager({
       )}
 
       {error && (
-        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-bg-surface)' }}>
+        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-solid-block)' }}>
           {error}
         </div>
       )}
@@ -478,7 +478,7 @@ function ProfileEditor({
     <div
       className="mb-3 p-3"
       data-profile-editor={profileName}
-      style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}
+      style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="text-[13px] font-bold" style={{ color: 'var(--hud-primary)' }}>
@@ -488,7 +488,7 @@ function ProfileEditor({
           onClick={onClose}
           disabled={busy}
           className="px-2 py-0.5 text-[11px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
         >
           {t('memory.cancel')}
         </button>
@@ -594,7 +594,7 @@ function ProfileEditor({
                     key={toolset}
                     onClick={() => toggleToolset(toolset)}
                     className="px-2 py-1 text-[11px] cursor-pointer"
-                    style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}
+                    style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}
                     type="button"
                   >
                     {toolset} ×
@@ -618,7 +618,7 @@ function ProfileEditor({
               <button
                 onClick={addToolset}
                 className="px-2 py-1 text-[11px] cursor-pointer"
-                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
+                style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
                 type="button"
               >
                 {t('memory.add')}
@@ -673,7 +673,7 @@ function ProfileEditor({
       )}
 
       {error && (
-        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-bg-surface)' }}>
+        <div className="mt-3 px-2 py-1.5 text-[12px]" style={{ color: 'var(--hud-error)', background: 'var(--hud-solid-block)' }}>
           {error}
         </div>
       )}
@@ -684,7 +684,7 @@ function ProfileEditor({
             onClick={onClose}
             disabled={busy}
             className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+            style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
             type="button"
           >
             {t('memory.cancel')}
@@ -729,7 +729,7 @@ function ProfileCard({
     <div
       className="p-4"
       data-profile-name={p.name}
-      style={{ background: 'var(--hud-bg-panel)', border: isActiveProfile ? '1px solid var(--hud-primary)' : '1px solid var(--hud-border)' }}
+      style={{ background: 'var(--hud-solid-block)', border: isActiveProfile ? '1px solid var(--hud-primary)' : '1px solid var(--hud-border)' }}
     >
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <StatusDot status={gatewayStatus} />
@@ -739,7 +739,7 @@ function ProfileCard({
         {p.is_default && <span className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>({t('profiles.default')})</span>}
         {isActiveProfile && <span className="text-[11px] px-1.5 py-0.5" style={{ color: 'var(--hud-success)', border: '1px solid var(--hud-success)' }}>{t('profiles.current')}</span>}
         <span className="text-[13px] px-1.5 py-0.5 ml-auto"
-          style={{ background: 'var(--hud-bg-hover)', color: p.is_local ? 'var(--hud-secondary)' : 'var(--hud-accent)' }}>
+          style={{ background: 'var(--hud-soft-block)', color: p.is_local ? 'var(--hud-secondary)' : 'var(--hud-accent)' }}>
           {p.is_local ? t('profiles.local') : p.provider}
         </span>
         <button
@@ -755,7 +755,7 @@ function ProfileCard({
           onClick={() => onEdit(p.name)}
           disabled={busy}
           className="px-2 py-0.5 text-[11px] cursor-pointer"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {t('memory.edit')}

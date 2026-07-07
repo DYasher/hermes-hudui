@@ -13,7 +13,6 @@ type WebSocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
 interface UseWebSocketReturn {
   status: WebSocketStatus
-  lastMessage: WebSocketMessage | null
   sendMessage: (data: string) => void
 }
 
@@ -23,7 +22,6 @@ const HEALTH_MIN_REFRESH_MS = 3000
 
 export function useWebSocket(): UseWebSocketReturn {
   const [status, setStatus] = useState<WebSocketStatus>('disconnected')
-  const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectAttemptsRef = useRef(0)
@@ -51,7 +49,7 @@ export function useWebSocket(): UseWebSocketReturn {
         {
           revalidate: true,
           rollbackOnError: true,
-          populateCache: true,
+          populateCache: false,
         }
       )
     }, delay)
@@ -61,7 +59,7 @@ export function useWebSocket(): UseWebSocketReturn {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
     setStatus('connecting')
-    
+
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
@@ -72,19 +70,15 @@ export function useWebSocket(): UseWebSocketReturn {
 
     ws.onmessage = (event) => {
       try {
-        // Handle plain text messages (like "pong") - skip them
         if (!event.data.startsWith('{')) {
           return
         }
         const data: WebSocketMessage = JSON.parse(event.data)
-        setLastMessage(data)
 
-        // Handle data change notifications
         if (data.type === 'data_changed') {
           const changedTypes = data.data_types || (data.data_type ? [data.data_type] : [])
           if (!changedTypes.length) return
 
-          // Map data types to API paths and trigger SWR revalidation
           const typeToPath: Record<string, string> = {
             sessions: '/sessions',
             skills: '/skills',
@@ -105,7 +99,6 @@ export function useWebSocket(): UseWebSocketReturn {
 
           const healthTypes = new Set(['health', 'config', 'gateway', 'plugins', 'model-info'])
 
-          // Silently revalidate matching SWR keys (keep stale data, update in background)
           changedTypes.forEach((dataType) => {
             if (healthTypes.has(dataType)) {
               revalidateHealth()
@@ -116,23 +109,22 @@ export function useWebSocket(): UseWebSocketReturn {
               mutate(
                 (key) => typeof key === 'string' && key.startsWith(`/api${path}`),
                 undefined,
-                { 
+                {
                   revalidate: true,
                   rollbackOnError: true,
-                  populateCache: true,
+                  populateCache: false,
                 }
               )
             }
           })
 
-          // Also revalidate dashboard silently
           mutate(
             (key) => typeof key === 'string' && key.startsWith('/api/dashboard'),
             undefined,
-            { 
+            {
               revalidate: true,
               rollbackOnError: true,
-              populateCache: true,
+              populateCache: false,
             }
           )
         }
@@ -145,10 +137,9 @@ export function useWebSocket(): UseWebSocketReturn {
       setStatus('disconnected')
       wsRef.current = null
 
-      // Exponential backoff reconnect
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000)
       reconnectAttemptsRef.current++
-      
+
       reconnectTimeoutRef.current = setTimeout(() => {
         connect()
       }, delay)
@@ -168,7 +159,6 @@ export function useWebSocket(): UseWebSocketReturn {
   useEffect(() => {
     connect()
 
-    // Heartbeat to keep connection alive
     const heartbeat = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send('ping')
@@ -187,5 +177,5 @@ export function useWebSocket(): UseWebSocketReturn {
     }
   }, [connect])
 
-  return { status, lastMessage, sendMessage }
+  return { status, sendMessage }
 }

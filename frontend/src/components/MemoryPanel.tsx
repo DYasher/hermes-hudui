@@ -504,7 +504,7 @@ function MemoryEntry({
   return (
     <div
       className="text-[13px] py-1.5 px-2 group"
-      style={{ background: 'var(--hud-bg-panel)', borderLeft: '2px solid var(--hud-border)' }}
+      style={{ background: 'var(--hud-solid-block)', borderLeft: '2px solid var(--hud-border)' }}
     >
       <div className="flex justify-between mb-0.5">
         <span className="uppercase tracking-wider text-[13px] font-bold" style={{ color: 'var(--hud-primary)' }}>
@@ -543,7 +543,7 @@ function MemoryEntry({
             onChange={e => setEditText(e.target.value)}
             className="w-full text-[13px] p-1.5 outline-none resize-y"
             style={{
-              background: 'var(--hud-bg-deep)',
+              background: 'var(--hud-soft-block)',
               border: '1px solid var(--hud-border)',
               color: 'var(--hud-text)',
               minHeight: '60px',
@@ -563,7 +563,7 @@ function MemoryEntry({
               onClick={cancelEdit}
               disabled={busy}
               className="text-[11px] px-2 py-0.5 cursor-pointer"
-              style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+              style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
             >
               {t('memory.cancel')}
             </button>
@@ -621,7 +621,7 @@ function AddEntryForm({ target, onMutate }: { target: string; onMutate: () => vo
         placeholder={t('memory.addNew')}
         className="w-full text-[13px] p-1.5 outline-none resize-y"
         style={{
-          background: 'var(--hud-bg-deep)',
+          background: 'var(--hud-soft-block)',
           border: '1px solid var(--hud-border)',
           color: 'var(--hud-text)',
           minHeight: '50px',
@@ -640,7 +640,7 @@ function AddEntryForm({ target, onMutate }: { target: string; onMutate: () => vo
         <button
           onClick={() => { setOpen(false); setText(''); setError('') }}
           className="text-[11px] px-2 py-0.5 cursor-pointer"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
         >
           {t('memory.cancel')}
         </button>
@@ -706,7 +706,7 @@ function BuiltinMemoryFileCard({
 
   if (!file) {
     return (
-      <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+      <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
         <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.loading')}</div>
       </div>
     )
@@ -729,7 +729,7 @@ function BuiltinMemoryFileCard({
   }
 
   return (
-    <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+    <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div>
           <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
@@ -747,7 +747,7 @@ function BuiltinMemoryFileCard({
             setNotice('')
           }}
           className="px-2 py-1 text-[11px] cursor-pointer"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {editing ? t('memory.cancel') : t('memory.fullFileEditor')}
@@ -769,7 +769,7 @@ function BuiltinMemoryFileCard({
             onChange={event => setDraft(event.target.value)}
             className="w-full text-[12px] p-2 outline-none resize-y font-mono"
             style={{
-              background: 'var(--hud-bg-deep)',
+              background: 'var(--hud-soft-block)',
               border: '1px solid var(--hud-border)',
               color: 'var(--hud-text)',
               minHeight: '220px',
@@ -780,7 +780,7 @@ function BuiltinMemoryFileCard({
               onClick={() => { setEditing(false); setDraft(file.content || ''); setError('') }}
               disabled={busy}
               className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
-              style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
+              style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}
               type="button"
             >
               {t('memory.cancel')}
@@ -801,7 +801,7 @@ function BuiltinMemoryFileCard({
           <pre
             className="text-[12px] whitespace-pre-wrap p-2 overflow-auto"
             style={{
-              background: 'var(--hud-bg-deep)',
+              background: 'var(--hud-soft-block)',
               border: '1px solid var(--hud-border)',
               color: file.content ? 'var(--hud-text)' : 'var(--hud-text-dim)',
               maxHeight: '280px',
@@ -860,7 +860,7 @@ function MemorySettingsPanel({
   }
 
   return (
-    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
       <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
         {t('memory.settings')}
       </div>
@@ -889,7 +889,7 @@ function MemorySettingsPanel({
             value={draft.memory_char_limit || 2200}
             onChange={event => setDraft(prev => ({ ...prev, memory_char_limit: Number(event.target.value) }))}
             className="w-full mt-1 px-2 py-1 outline-none"
-            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+            style={{ background: 'var(--hud-soft-block)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
           />
         </label>
         <label className="block text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
@@ -900,7 +900,7 @@ function MemorySettingsPanel({
             value={draft.user_char_limit || 1375}
             onChange={event => setDraft(prev => ({ ...prev, user_char_limit: Number(event.target.value) }))}
             className="w-full mt-1 px-2 py-1 outline-none"
-            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+            style={{ background: 'var(--hud-soft-block)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
           />
         </label>
         <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--hud-text)' }}>
@@ -917,7 +917,7 @@ function MemorySettingsPanel({
             value={draft.memory_notifications || 'on'}
             onChange={event => setDraft(prev => ({ ...prev, memory_notifications: event.target.value as MemorySettingsState['memory_notifications'] }))}
             className="w-full mt-1 px-2 py-1 outline-none"
-            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+            style={{ background: 'var(--hud-soft-block)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
           >
             <option value="off">{t('memory.notificationsOff')}</option>
             <option value="on">{t('memory.notificationsOn')}</option>
@@ -968,7 +968,7 @@ function PendingMemoryPanel({
   }
 
   return (
-    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
           {t('memory.pendingWrites')}
@@ -982,7 +982,7 @@ function PendingMemoryPanel({
       ) : (
         <div className="space-y-2">
           {data.pending.map(item => (
-            <div key={item.id} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div key={item.id} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <div className="font-mono text-[12px]" style={{ color: 'var(--hud-primary)' }}>
@@ -1006,7 +1006,7 @@ function PendingMemoryPanel({
                     onClick={() => run(item.id, 'reject')}
                     disabled={!!busyId}
                     className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-                    style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
+                    style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
                     type="button"
                   >
                     {busyId === `reject:${item.id}` ? '...' : t('memory.reject')}
@@ -1072,7 +1072,7 @@ function MemoryHistoryPanel({ onMutate }: { onMutate: () => void }) {
   }
 
   return (
-    <div className="p-2 mt-3" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+    <div className="p-2 mt-3" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div>
           <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
@@ -1091,13 +1091,13 @@ function MemoryHistoryPanel({ onMutate }: { onMutate: () => void }) {
             }}
             placeholder={t('memory.searchHistory')}
             className="text-[12px] px-2 py-1 outline-none"
-            style={{ background: 'var(--hud-bg-deep)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
+            style={{ background: 'var(--hud-soft-block)', border: '1px solid var(--hud-border)', color: 'var(--hud-text)' }}
           />
           <button
             onClick={() => runSearch()}
             disabled={busy}
             className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
             type="button"
           >
             {busy ? '...' : t('memory.search')}
@@ -1117,7 +1117,7 @@ function MemoryHistoryPanel({ onMutate }: { onMutate: () => void }) {
             <div
               key={`${candidate.session_id}:${candidate.message_id}`}
               className="p-2"
-              style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}
+              style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}
             >
               <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
                 <div>
@@ -1138,7 +1138,7 @@ function MemoryHistoryPanel({ onMutate }: { onMutate: () => void }) {
                   onClick={() => saveCandidate(candidate, 'memory')}
                   disabled={!!busyId}
                   className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-                  style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                  style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
                   type="button"
                 >
                   {busyId === `${candidate.message_id}:memory` ? '...' : t('memory.saveToMemory')}
@@ -1204,7 +1204,7 @@ function MemoryExportPanel() {
   const redactionCount = data?.provider.redactions.length || 0
 
   return (
-    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+    <div className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div>
           <div className="uppercase tracking-wider text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>
@@ -1219,7 +1219,7 @@ function MemoryExportPanel() {
             onClick={loadExport}
             disabled={busy}
             className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+            style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
             type="button"
           >
             {busy ? '...' : t('memory.previewExport')}
@@ -1236,21 +1236,21 @@ function MemoryExportPanel() {
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
           <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.files')}</div>
           <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{files.length}</div>
         </div>
-        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
           <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalProvider')}</div>
           <div className="text-[12px]" style={{ color: data?.provider.active_provider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
             {data?.provider.active_provider || t('memory.noneExternal')}
           </div>
         </div>
-        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
           <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.configuredProviders')}</div>
           <div className="text-[12px]" style={{ color: 'var(--hud-text)' }}>{providerCount}</div>
         </div>
-        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
           <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.redactedFields')}</div>
           <div className="text-[12px]" style={{ color: redactionCount ? 'var(--hud-warning)' : 'var(--hud-success)' }}>{redactionCount}</div>
         </div>
@@ -1327,7 +1327,7 @@ function CapabilityMatrix({
             <div
               key={item.key}
               className="px-2 py-1"
-              style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}
+              style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}
             >
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{item.label}</div>
               <div className="text-[12px]" style={{ color: 'var(--hud-text)' }}>{item.value}</div>
@@ -1353,7 +1353,7 @@ function CapabilityMatrix({
         <div className="uppercase tracking-wider text-[10px] mb-2" style={{ color: 'var(--hud-text-dim)' }}>
           {t('memory.schemaSource')}
         </div>
-        <div className="px-2 py-1.5" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div className="px-2 py-1.5" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
           <div className="text-[12px]" style={{ color: schemaSource?.fallback ? 'var(--hud-warning)' : 'var(--hud-success)' }}>
             {schemaLabel}
           </div>
@@ -1401,7 +1401,7 @@ function ExternalMemoryViewPanel({
               onClick={onRefresh}
               disabled={busy}
               className="px-2 py-1 text-[11px] cursor-pointer disabled:opacity-40"
-              style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+              style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
               type="button"
             >
               {busy ? '...' : t('memory.refreshExternal')}
@@ -1417,11 +1417,11 @@ function ExternalMemoryViewPanel({
       ) : (
         <div className="space-y-2">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
-            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.entries')}</div>
               <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{externalView?.summary.total ?? 0}</div>
             </div>
-            <div className="px-2 py-1 md:col-span-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div className="px-2 py-1 md:col-span-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalCategories')}</div>
               <div className="text-[12px]" style={{ color: 'var(--hud-text)' }}>
                 {Object.keys(categories).length
@@ -1453,7 +1453,7 @@ function ExternalMemoryViewPanel({
                 <div
                   key={item.id}
                   className="p-2"
-                  style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}
+                  style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
                     <div>
@@ -1544,7 +1544,7 @@ function ProviderPicker({
         disabled={busy || !providers.length}
         className="w-full text-[12px] px-2 py-1.5 outline-none"
         style={{
-          background: 'var(--hud-bg-deep)',
+          background: 'var(--hud-soft-block)',
           border: '1px solid var(--hud-border)',
           color: 'var(--hud-text)',
         }}
@@ -1586,25 +1586,25 @@ function ProviderStatusCards({
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
         <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.externalProvider')}</div>
         <div className="text-[12px]" style={{ color: provider ? 'var(--hud-primary)' : 'var(--hud-text-dim)' }}>
           {provider?.label || t('memory.noneExternal')}
         </div>
       </div>
-      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
         <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.configured')}</div>
         <div className="text-[12px]" style={{ color: provider?.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
           {readinessText(provider)}
         </div>
       </div>
-      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
         <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthDependencies')}</div>
         <div className="text-[12px]" style={{ color: healthColor(activeHealth?.dependencies.ok) }}>
           {healthText(activeHealth?.dependencies.ok)}
         </div>
       </div>
-      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+      <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
         <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
         <div className="text-[12px]" style={{ color: activeHealth?.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
           {activeHealth?.active ? t('memory.activeState') : t('memory.inactiveState')}
@@ -1695,7 +1695,7 @@ function ProviderOverviewTab({
             onClick={onDisable}
             disabled={busy}
             className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
+            style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}
             type="button"
           >
             {busy ? '...' : t('memory.turnOffExternal')}
@@ -1705,7 +1705,7 @@ function ProviderOverviewTab({
           onClick={onCheck}
           disabled={busy || !provider}
           className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {busy ? '...' : t('memory.checkStatus')}
@@ -1816,7 +1816,7 @@ function ProviderConfigTab({
                     placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
                     className="w-full text-[12px] px-2 py-1.5 outline-none"
                     style={{
-                      background: 'var(--hud-bg-deep)',
+                      background: 'var(--hud-soft-block)',
                       border: '1px solid var(--hud-border)',
                       color: 'var(--hud-text)',
                     }}
@@ -1846,7 +1846,7 @@ function ProviderConfigTab({
           onClick={onSave}
           disabled={busy || !provider.config_fields?.length || !!requiredConfigIssues.length}
           className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {busy ? '...' : t('memory.saveProviderConfig')}
@@ -1894,25 +1894,25 @@ function ProviderDiagnosticsTab({
             {t('memory.healthChecks')}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthConfig')}</div>
               <div className="text-[12px]" style={{ color: healthColor(activeHealth.required_config.ok) }}>
                 {healthText(activeHealth.required_config.ok)}
               </div>
             </div>
-            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthDependencies')}</div>
               <div className="text-[12px]" style={{ color: healthColor(activeHealth.dependencies.ok) }}>
                 {healthText(activeHealth.dependencies.ok)}
               </div>
             </div>
-            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
               <div className="text-[12px]" style={{ color: activeHealth.active ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
                 {activeHealth.active ? t('memory.activeState') : t('memory.inactiveState')}
               </div>
             </div>
-            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div className="px-2 py-1" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.healthStatus')}</div>
               <div className="text-[12px]" style={{ color: healthColor(activeHealth.status_command?.ok) }}>
                 {healthText(activeHealth.status_command?.ok)}
@@ -1979,7 +1979,7 @@ function ProviderDiagnosticsTab({
           onClick={onCheck}
           disabled={busy}
           className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
           type="button"
         >
           {busy ? '...' : t('memory.checkStatus')}
@@ -2004,7 +2004,7 @@ function ProviderDiagnosticsTab({
             }}
             className="text-[11px] whitespace-pre-wrap p-2 overflow-auto cursor-pointer"
             style={{
-              background: 'var(--hud-bg-deep)',
+              background: 'var(--hud-soft-block)',
               border: '1px solid var(--hud-border)',
               color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
               maxHeight: '280px',
@@ -2073,7 +2073,7 @@ function ProviderInstallGuideTab({
       {modeCommands.length ? (
         <div className="space-y-2">
           {modeCommands.map(item => (
-            <div key={item.mode.id} className="p-2 space-y-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+            <div key={item.mode.id} className="p-2 space-y-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
               <div>
                 <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{item.mode.label}</div>
                 {!!item.mode.description && (
@@ -2094,7 +2094,7 @@ function ProviderInstallGuideTab({
           ))}
         </div>
       ) : commands.map(item => (
-        <div key={`${item.label}:${item.command}`} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-deep)' }}>
+        <div key={`${item.label}:${item.command}`} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
           <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
             {item.label}
           </div>
@@ -2451,7 +2451,7 @@ function MemoryProvidersPanel({
   }
 
   return (
-    <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-bg-panel)' }}>
+    <div className="p-2 h-full" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-solid-block)' }}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
         <div>
           <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
@@ -2528,7 +2528,7 @@ function MemoryProvidersPanel({
         >
           <div
             className="w-full max-w-5xl"
-            style={{ background: 'var(--hud-bg-panel)', border: '1px solid var(--hud-border)' }}
+            style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}
           >
             <div
               className="flex items-center justify-between gap-2 px-3 py-2"
@@ -2545,7 +2545,7 @@ function MemoryProvidersPanel({
               <button
                 onClick={() => setStatusModalOpen(false)}
                 className="px-2 py-1 text-[12px] cursor-pointer"
-                style={{ background: 'var(--hud-bg-hover)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
                 type="button"
               >
                 {t('memory.closeStatusModal')}
@@ -2554,7 +2554,7 @@ function MemoryProvidersPanel({
             <pre
               className="text-[12px] whitespace-pre-wrap p-3 overflow-auto"
               style={{
-                background: 'var(--hud-bg-deep)',
+                background: 'var(--hud-soft-block)',
                 color: statusResult.status_command.ok ? 'var(--hud-text)' : 'var(--hud-warning)',
                 maxHeight: '70vh',
                 minHeight: '50vh',
