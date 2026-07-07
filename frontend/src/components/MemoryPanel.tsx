@@ -1625,7 +1625,7 @@ function ProviderConsoleHeader({
   )
 }
 
-function ProviderControlRail({
+function ProviderCatalogRail({
   providers,
   selectedProviderId,
   activeId,
@@ -1641,8 +1641,7 @@ function ProviderControlRail({
   readinessText: (provider?: MemoryProviderInfo) => string
 }) {
   const { t } = useTranslation()
-  const selectedProvider = providers.find(provider => provider.id === selectedProviderId)
-  const activeProvider = providers.find(provider => provider.id === activeId)
+  const providerCatalogGroups = providerGroups(providers)
 
   return (
     <div className="space-y-3 min-w-0">
@@ -1654,25 +1653,47 @@ function ProviderControlRail({
         onSelect={onSelect}
         readinessText={readinessText}
       />
-      <div className="space-y-1.5 text-[12px]">
-        <div className="px-2 py-1.5" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
-          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.selectProvider')}</div>
-          <div style={{ color: selectedProvider ? 'var(--hud-text)' : 'var(--hud-text-dim)' }}>
-            {selectedProvider?.label || t('memory.notConfigured')}
+      <div className="space-y-2">
+        {providerCatalogGroups.map(group => (
+          <div key={group.id}>
+            <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+              {t(group.labelKey)}
+            </div>
+            <div className="space-y-1">
+              {group.providers.map(item => {
+                const selected = item.id === selectedProviderId
+                const active = item.id === activeId
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onSelect(item.id)}
+                    disabled={busy}
+                    aria-current={item.id === selectedProviderId ? 'true' : undefined}
+                    className="w-full text-left px-2 py-1.5 cursor-pointer disabled:opacity-40"
+                    style={{
+                      background: selected ? 'var(--hud-bg-hover)' : 'var(--hud-soft-block)',
+                      border: selected ? '1px solid var(--hud-primary)' : '1px solid var(--hud-border)',
+                      color: 'var(--hud-text)',
+                    }}
+                    type="button"
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-[12px] truncate">{item.label}</span>
+                      {active && (
+                        <span className="text-[10px]" style={{ color: 'var(--hud-success)' }}>
+                          {t('memory.activeState')}
+                        </span>
+                      )}
+                    </span>
+                    <span className="block text-[10px] truncate" style={{ color: item.configured ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
+                      {readinessText(item)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
-        <div className="px-2 py-1.5" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
-          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.activeProvider')}</div>
-          <div style={{ color: activeProvider ? 'var(--hud-success)' : 'var(--hud-text-dim)' }}>
-            {activeProvider?.label || t('memory.inactiveState')}
-          </div>
-        </div>
-        <div className="px-2 py-1.5" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
-          <div className="text-[10px]" style={{ color: 'var(--hud-text-dim)' }}>{t('memory.configured')}</div>
-          <div style={{ color: selectedProvider?.configured ? 'var(--hud-success)' : 'var(--hud-warning)' }}>
-            {readinessText(selectedProvider)}
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   )
@@ -2599,7 +2620,7 @@ function MemoryProvidersPanel({
       />
 
       <div className="grid grid-cols-1 2xl:grid-cols-[240px_minmax(0,1fr)] gap-3">
-        <ProviderControlRail
+        <ProviderCatalogRail
           providers={providers}
           selectedProviderId={selectedProviderId}
           activeId={active}
