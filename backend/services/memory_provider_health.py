@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -90,6 +91,16 @@ def provider_health(
 
 
 RUNTIME_PROBE_FIELDS: dict[tuple[str, str], dict[str, Any]] = {
+    ("honcho", "self_hosted"): {
+        "field": "baseUrl",
+        "label": "Honcho self-hosted",
+        "paths": ["/health", "/"],
+    },
+    ("openviking", "self_hosted"): {
+        "field": "OPENVIKING_ENDPOINT",
+        "label": "OpenViking",
+        "paths": ["/health", "/api/health", "/"],
+    },
     ("cognee", "docker_api"): {
         "field": "COGNEE_API_URL",
         "label": "Cognee API",
@@ -109,6 +120,14 @@ RUNTIME_PROBE_FIELDS: dict[tuple[str, str], dict[str, Any]] = {
         "field": "MEMOS_BASE_URL",
         "label": "MemOS API",
         "paths": ["/health", "/"],
+    },
+}
+
+
+RUNTIME_COMMAND_PROBE_FIELDS: dict[tuple[str, str], dict[str, Any]] = {
+    ("agentmemory", "mcp_server"): {
+        "field": "AGENTMEMORY_MCP_COMMAND",
+        "label": "agentmemory MCP",
     },
 }
 
@@ -168,11 +187,60 @@ def _http_probe(label: str, base_url: str, paths: list[str]) -> dict[str, Any]:
     }
 
 
+def _command_probe(label: str, command: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "kind": "command",
+        "name": label,
+        "command": command,
+        "executable": "",
+        "ok": False,
+        "error": "",
+    }
+    try:
+        parts = shlex.split(command)
+    except ValueError as exc:
+        result["error"] = str(exc)
+        return result
+
+    if not parts:
+        result["error"] = "empty command"
+        return result
+
+    executable = parts[0]
+    result["executable"] = executable
+    if shutil.which(executable):
+        result["ok"] = True
+        return result
+
+    result["error"] = f"{executable} not found on PATH"
+    return result
+
+
 def provider_runtime_checks(provider: str, mode: str = "") -> dict[str, Any]:
     info = MEMORY_PROVIDER_OPTIONS[provider]
     values = memory_provider_config.provider_config_values(provider)
     mode = memory_provider_config.validate_config_mode(info, mode) or memory_provider_config.current_config_mode(info, values)
     probe = RUNTIME_PROBE_FIELDS.get((provider, mode))
+    command_probe = RUNTIME_COMMAND_PROBE_FIELDS.get((provider, mode))
+    if command_probe:
+        field = str(command_probe["field"])
+        command = str(values.get(field, {}).get("value") or "").strip()
+        if not command:
+            return {
+                "ok": None,
+                "mode": mode,
+                "reason": "missing_probe_command",
+                "checks": [],
+            }
+
+        check = _command_probe(str(command_probe["label"]), command)
+        return {
+            "ok": bool(check["ok"]),
+            "mode": mode,
+            "reason": "" if check["ok"] else "probe_failed",
+            "checks": [check],
+        }
+
     if not probe:
         return {
             "ok": None,

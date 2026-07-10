@@ -190,7 +190,21 @@ def test_memory_panel_renders_mode_aware_install_guide() -> None:
     assert "provider.config_modes.map(mode => ({ mode, commands }))" in install_block
     assert "item.mode.label" in install_block
     assert "item.mode.description" in install_block
+    assert "modeRequirementLabels(provider, item.mode)" in install_block
+    assert "memory.minimumConfig" in install_block
     assert "item.commands.map(command =>" in install_block
+
+
+def test_memory_panel_shows_provider_config_requirements_and_next_step() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
+    config_block = panel.split("function ProviderConfigTab", 1)[1].split("function ProviderDiagnosticsTab", 1)[0]
+
+    assert "modeRequirementLabels(provider, activeMode)" in config_block
+    assert "memory.minimumConfig" in config_block
+    assert "memory.configNextStep" in config_block
+    assert "statusCommand" in config_block
+    assert "'memory.configNextStep'" in translations
 
 
 def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_strip() -> None:

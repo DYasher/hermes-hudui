@@ -184,6 +184,38 @@ def provider_summary_external_view(provider: str) -> dict[str, Any]:
         else "No provider fields are configured yet."
     )
     missing_text = ", ".join(missing_labels) if missing_labels else "No required fields are missing."
+    required_labels = [
+        next((field["label"] for field in fields if field["name"] == name), name)
+        for name in mode.get("required_fields", [])
+        if name != "mode"
+    ]
+    optional_labels = [
+        next((field["label"] for field in fields if field["name"] == name), name)
+        for name in mode.get("optional_fields", [])
+        if name != "mode"
+    ]
+    requirement_text = (
+        ", ".join(required_labels)
+        if required_labels
+        else "No required direct fields"
+    )
+    optional_text = ", ".join(optional_labels) if optional_labels else "None"
+    file_states = []
+    for relative_path in info.get("config_files", []):
+        is_directory = str(relative_path).endswith("/")
+        path = memory_provider_config.relative_config_path(str(relative_path).rstrip("/"))
+        exists = path.is_dir() if is_directory else path.is_file()
+        file_states.append(
+            {
+                "path": str(relative_path),
+                "exists": exists,
+            }
+        )
+    file_text = (
+        ", ".join(f"{item['path']}: {'present' if item['exists'] else 'missing'}" for item in file_states)
+        if file_states
+        else "No config files registered."
+    )
     items = [
         {
             "id": f"{provider}:runtime",
@@ -198,7 +230,10 @@ def provider_summary_external_view(provider: str) -> dict[str, Any]:
         },
         {
             "id": f"{provider}:config",
-            "content": f"Configured fields: {config_text}. Missing required fields: {missing_text}",
+            "content": (
+                f"Configured fields: {config_text}. Missing required fields: {missing_text}. "
+                f"Required for mode: {requirement_text}. Optional: {optional_text}."
+            ),
             "category": "config",
             "tags": [field["name"] for field in configured_fields],
             "trust_score": 1.0 if configured else 0.0,
@@ -208,6 +243,20 @@ def provider_summary_external_view(provider: str) -> dict[str, Any]:
             "updated_at": "",
         },
     ]
+    if file_states:
+        items.append(
+            {
+                "id": f"{provider}:files",
+                "content": f"Config files: {file_text}",
+                "category": "files",
+                "tags": [item["path"] for item in file_states if item["exists"]],
+                "trust_score": 1.0 if all(item["exists"] for item in file_states) else 0.0,
+                "retrieval_count": 0,
+                "helpful_count": 0,
+                "created_at": "",
+                "updated_at": "",
+            }
+        )
     return {
         "provider": provider,
         "available": True,
@@ -218,6 +267,8 @@ def provider_summary_external_view(provider: str) -> dict[str, Any]:
             "categories": {
                 "configured_fields": len(configured_fields),
                 "missing_required": len(missing_labels),
+                "config_files_present": sum(1 for item in file_states if item["exists"]),
+                "config_files_missing": sum(1 for item in file_states if not item["exists"]),
             },
         },
         "items": items,

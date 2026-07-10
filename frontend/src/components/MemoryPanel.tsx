@@ -16,6 +16,8 @@ interface MemoryProviderRuntimeCheck {
   name: string
   ok: boolean
   url?: string
+  command?: string
+  executable?: string
   status_code?: number | null
   error?: string
 }
@@ -1743,10 +1745,29 @@ function ProviderOverviewTab({
   )
 }
 
+function providerFieldLabel(provider: MemoryProviderInfo, fieldName: string) {
+  return provider.config_fields.find(field => field.name === fieldName)?.label || fieldName
+}
+
+function modeRequirementLabels(provider: MemoryProviderInfo, mode?: MemoryProviderConfigMode) {
+  if (!mode) return []
+  const required = mode.required_fields
+    .filter(name => name !== 'mode')
+    .map(name => providerFieldLabel(provider, name))
+  const requiredAny = mode.required_any
+    .map(group => group
+      .filter(name => name !== 'mode')
+      .map(name => providerFieldLabel(provider, name))
+      .join(' / '))
+    .filter(Boolean)
+  return [...required, ...requiredAny]
+}
+
 function ProviderConfigTab({
   provider,
   activeMode,
   selectedMode,
+  statusCommand,
   visibleConfigFields,
   configDraft,
   requiredConfigIssues,
@@ -1759,6 +1780,7 @@ function ProviderConfigTab({
   provider: MemoryProviderInfo
   activeMode?: MemoryProviderConfigMode
   selectedMode: string
+  statusCommand: string
   visibleConfigFields: MemoryProviderConfigField[]
   configDraft: Record<string, string>
   requiredConfigIssues: string[]
@@ -1769,6 +1791,7 @@ function ProviderConfigTab({
   fieldIsRequired: (field: MemoryProviderConfigField) => boolean
 }) {
   const { t } = useTranslation()
+  const configModeRequirements = modeRequirementLabels(provider, activeMode)
 
   return (
     <div className="space-y-3">
@@ -1802,6 +1825,11 @@ function ProviderConfigTab({
           {!!activeMode?.description && (
             <div className="text-[11px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
               {activeMode.description}
+            </div>
+          )}
+          {activeMode && (
+            <div className="text-[11px] mt-1 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+              {t('memory.minimumConfig')}: {configModeRequirements.length ? configModeRequirements.join(' + ') : t('memory.noMinimumConfig')}
             </div>
           )}
         </div>
@@ -1859,6 +1887,11 @@ function ProviderConfigTab({
           {t('memory.requiredConfigMissing')}: {requiredConfigIssues.join(', ')}
         </div>
       )}
+
+      <div className="text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+        {t('memory.configNextStep')}: {t('memory.checkStatus')}
+        <span className="font-mono"> · {statusCommand}</span>
+      </div>
 
       <div className="flex justify-end">
         <button
@@ -2098,26 +2131,32 @@ function ProviderInstallGuideTab({
       </div>
       {modeCommands.length ? (
         <div className="space-y-2">
-          {modeCommands.map(item => (
-            <div key={item.mode.id} className="p-2 space-y-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
-              <div>
-                <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{item.mode.label}</div>
-                {!!item.mode.description && (
-                  <div className="text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>{item.mode.description}</div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-1.5">
-                {item.commands.map(command => (
-                  <div key={`${item.mode.id}:${command.label}:${command.command}`}>
-                    <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-                      {command.label}
-                    </div>
-                    <code className="text-[12px] break-all" style={{ color: 'var(--hud-text)' }}>{command.command}</code>
+          {modeCommands.map(item => {
+            const requirements = modeRequirementLabels(provider, item.mode)
+            return (
+              <div key={item.mode.id} className="p-2 space-y-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
+                <div>
+                  <div className="text-[12px]" style={{ color: 'var(--hud-primary)' }}>{item.mode.label}</div>
+                  {!!item.mode.description && (
+                    <div className="text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>{item.mode.description}</div>
+                  )}
+                  <div className="text-[11px] mt-1 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+                    {t('memory.minimumConfig')}: {requirements.length ? requirements.join(' + ') : t('memory.noMinimumConfig')}
                   </div>
-                ))}
+                </div>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {item.commands.map(command => (
+                    <div key={`${item.mode.id}:${command.label}:${command.command}`}>
+                      <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
+                        {command.label}
+                      </div>
+                      <code className="text-[12px] break-all" style={{ color: 'var(--hud-text)' }}>{command.command}</code>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       ) : commands.map(item => (
         <div key={`${item.label}:${item.command}`} className="p-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
@@ -2319,6 +2358,7 @@ function MemoryProvidersPanel({
       const pieces = [
         `${check.name}: ${healthText(check.ok)}`,
         check.url || '',
+        check.command || '',
         check.status_code ? `HTTP ${check.status_code}` : '',
         check.error || '',
       ].filter(Boolean)
@@ -2434,6 +2474,7 @@ function MemoryProvidersPanel({
           provider={detailProvider}
           activeMode={activeMode}
           selectedMode={selectedMode}
+          statusCommand={data?.status_command || 'hermes memory status'}
           visibleConfigFields={visibleConfigFields}
           configDraft={configDraft}
           requiredConfigIssues={requiredConfigIssues}

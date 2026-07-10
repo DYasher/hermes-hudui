@@ -982,7 +982,10 @@ def test_external_view_for_cognee_is_summary_only(hermes_home: Path) -> None:
     assert result["reason"] == "provider_summary"
     assert result["summary"]["categories"]["configured_fields"] == 0
     assert result["summary"]["categories"]["missing_required"] == 1
-    assert {item["category"] for item in result["items"]} == {"runtime", "config"}
+    assert result["summary"]["categories"]["config_files_present"] == 0
+    assert result["summary"]["categories"]["config_files_missing"] == 2
+    assert {item["category"] for item in result["items"]} == {"runtime", "config", "files"}
+    assert any(".env: missing" in item["content"] for item in result["items"])
 
 
 def test_external_view_for_community_provider_reports_safe_config_summary(hermes_home: Path) -> None:
@@ -1041,6 +1044,116 @@ def test_memory_provider_check_runs_agentmemory_runtime_probe(monkeypatch, herme
     assert runtime["mode"] == "rest_server"
     assert runtime["checks"][0]["kind"] == "http"
     assert runtime["checks"][0]["status_code"] == 200
+
+
+def test_memory_provider_check_runs_honcho_self_hosted_runtime_probe(monkeypatch, hermes_home: Path) -> None:
+    (hermes_home / "honcho.json").write_text(
+        '{"baseUrl":"http://127.0.0.1:8787","hosts":{"hermes":{"peerName":"asher","workspace":"local","aiPeer":"coder"}}}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/hermes",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
+    )
+
+    seen_urls: list[str] = []
+
+    class FakeResponse:
+        def getcode(self) -> int:
+            return 200
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_urls.append(request.full_url)
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_health.urlopen", fake_urlopen)
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="honcho", mode="self_hosted"))
+
+    assert seen_urls == ["http://127.0.0.1:8787/health"]
+    runtime = result["health"]["runtime"]
+    assert runtime["ok"] is True
+    assert runtime["mode"] == "self_hosted"
+    assert runtime["checks"][0]["name"] == "Honcho self-hosted"
+
+
+def test_memory_provider_check_runs_openviking_runtime_probe(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "OPENVIKING_ENDPOINT=http://127.0.0.1:1933\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/hermes",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
+    )
+
+    seen_urls: list[str] = []
+
+    class FakeResponse:
+        def getcode(self) -> int:
+            return 200
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_urls.append(request.full_url)
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_health.urlopen", fake_urlopen)
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="openviking"))
+
+    assert seen_urls == ["http://127.0.0.1:1933/health"]
+    runtime = result["health"]["runtime"]
+    assert runtime["ok"] is True
+    assert runtime["mode"] == "self_hosted"
+    assert runtime["checks"][0]["name"] == "OpenViking"
+
+
+def test_memory_provider_check_runs_agentmemory_mcp_command_probe(monkeypatch, hermes_home: Path) -> None:
+    (hermes_home / "agentmemory.json").write_text(
+        '{"AGENTMEMORY_MCP_COMMAND":"npx -y @agentmemory/mcp"}\n',
+        encoding="utf-8",
+    )
+
+    def fake_which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in {"hermes", "npx"} else None
+
+    monkeypatch.setattr("backend.services.memory_provider_health.shutil.which", fake_which)
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
+    )
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="agentmemory", mode="mcp_server"))
+
+    runtime = result["health"]["runtime"]
+    assert runtime["ok"] is True
+    assert runtime["mode"] == "mcp_server"
+    assert runtime["checks"] == [
+        {
+            "kind": "command",
+            "name": "agentmemory MCP",
+            "command": "npx -y @agentmemory/mcp",
+            "executable": "npx",
+            "ok": True,
+            "error": "",
+        }
+    ]
 
 
 def test_memory_provider_check_uses_selected_config_mode_for_runtime_probe(monkeypatch, hermes_home: Path) -> None:
