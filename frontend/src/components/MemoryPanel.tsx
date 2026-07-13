@@ -1685,7 +1685,6 @@ function ProviderOverviewTab({
   readinessText,
   healthColor,
   healthText,
-  onCheck,
   onEnable,
   onDisable,
 }: {
@@ -1697,7 +1696,6 @@ function ProviderOverviewTab({
   readinessText: (provider?: MemoryProviderInfo) => string
   healthColor: (ok: boolean | null | undefined) => string
   healthText: (ok: boolean | null | undefined) => string
-  onCheck: () => void
   onEnable: () => void
   onDisable: () => void
 }) {
@@ -1731,15 +1729,6 @@ function ProviderOverviewTab({
             {busy ? '...' : t('memory.turnOffExternal')}
           </button>
         )}
-        <button
-          onClick={onCheck}
-          disabled={busy || !provider}
-          className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
-          style={{ background: 'var(--hud-soft-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
-          type="button"
-        >
-          {busy ? '...' : t('memory.checkStatus')}
-        </button>
         <button
           onClick={onEnable}
           disabled={busy || !provider || provider.active}
@@ -2572,7 +2561,6 @@ function MemoryProvidersPanel({
         readinessText={readinessText}
         healthColor={healthColor}
         healthText={healthText}
-        onCheck={runStatusCheck}
         onEnable={() => detailProvider && submit(detailProvider.id)}
         onDisable={() => submit('')}
       />

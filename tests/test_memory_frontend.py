@@ -275,6 +275,8 @@ def test_memory_panel_moves_diagnostics_and_external_view_out_of_default_flow() 
     assert "CapabilityMatrix" not in overview_block
     assert "ExternalMemoryViewPanel" not in overview_block
     assert "statusOutput" not in overview_block
+    assert "t('memory.checkStatus')" not in overview_block
+    assert "onClick={onCheck}" not in overview_block
     assert "minimumConfigFields" not in config_block
     assert "CapabilityMatrix" in diagnostics_block
     assert "activeHealth" in diagnostics_block
