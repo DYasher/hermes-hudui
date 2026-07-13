@@ -189,6 +189,10 @@ def mode_specs(info: dict[str, Any]) -> list[dict[str, Any]]:
                 "required_fields": mode.get("required_fields", []),
                 "required_any": mode.get("required_any", []),
                 "optional_fields": mode.get("optional_fields", []),
+                "dependencies": mode.get("dependencies", []),
+                "setup_command": mode.get("setup_command", ""),
+                "status_command": mode.get("status_command", ""),
+                "next_steps": mode.get("next_steps", ""),
             }
         )
     return modes

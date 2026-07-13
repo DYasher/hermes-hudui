@@ -53,6 +53,11 @@ interface MemoryProviderHealth {
   status_command: MemoryStatusCommand | null
 }
 
+interface MemoryProviderDependency {
+  kind: string
+  name: string
+}
+
 interface MemoryProviderConfigMode {
   id: string
   label: string
@@ -62,6 +67,10 @@ interface MemoryProviderConfigMode {
   required_fields: string[]
   required_any: string[][]
   optional_fields: string[]
+  dependencies: MemoryProviderDependency[]
+  setup_command?: string
+  status_command?: string
+  next_steps?: string
 }
 
 interface MemoryProviderCapabilities {
@@ -1763,6 +1772,25 @@ function modeRequirementLabels(provider: MemoryProviderInfo, mode?: MemoryProvid
   return [...required, ...requiredAny]
 }
 
+function modeDependencyLabels(dependencies: MemoryProviderDependency[] = []) {
+  return dependencies.map(dependency => `${dependency.kind}:${dependency.name}`)
+}
+
+function modeInstallCommands(
+  provider: MemoryProviderInfo,
+  mode: MemoryProviderConfigMode,
+  setupCommand: string,
+  statusCommand: string,
+  offCommand: string
+) {
+  return [
+    { labelKey: 'memory.installCommand' as TranslationKey, command: mode.setup_command || provider.setup_command || setupCommand },
+    { labelKey: 'memory.configCommand' as TranslationKey, command: provider.config_command || setupCommand },
+    { labelKey: 'memory.statusCommand' as TranslationKey, command: mode.status_command || statusCommand },
+    { labelKey: 'memory.offCommand' as TranslationKey, command: offCommand },
+  ].filter(item => item.command)
+}
+
 function ProviderConfigTab({
   provider,
   activeMode,
@@ -2121,7 +2149,7 @@ function ProviderInstallGuideTab({
     { label: t('memory.offCommand'), command: offCommand },
   ].filter(item => item.command)
   const modeCommands = provider.config_modes?.length
-    ? provider.config_modes.map(mode => ({ mode, commands }))
+    ? provider.config_modes.map(mode => ({ mode, commands: modeInstallCommands(provider, mode, setupCommand, statusCommand, offCommand) }))
     : []
 
   return (
@@ -2133,6 +2161,7 @@ function ProviderInstallGuideTab({
         <div className="space-y-2">
           {modeCommands.map(item => {
             const requirements = modeRequirementLabels(provider, item.mode)
+            const dependencies = modeDependencyLabels(item.mode.dependencies)
             return (
               <div key={item.mode.id} className="p-2 space-y-2" style={{ border: '1px solid var(--hud-border)', background: 'var(--hud-soft-block)' }}>
                 <div>
@@ -2143,12 +2172,22 @@ function ProviderInstallGuideTab({
                   <div className="text-[11px] mt-1 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
                     {t('memory.minimumConfig')}: {requirements.length ? requirements.join(' + ') : t('memory.noMinimumConfig')}
                   </div>
+                  {!!dependencies.length && (
+                    <div className="text-[11px] mt-1 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+                      {t('memory.modeDependencies')}: {dependencies.join(' + ')}
+                    </div>
+                  )}
+                  {!!item.mode.next_steps && (
+                    <div className="text-[11px] mt-1" style={{ color: 'var(--hud-text-dim)' }}>
+                      {t('memory.nextSteps')}: {item.mode.next_steps}
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 gap-1.5">
                   {item.commands.map(command => (
-                    <div key={`${item.mode.id}:${command.label}:${command.command}`}>
+                    <div key={`${item.mode.id}:${command.labelKey}:${command.command}`}>
                       <div className="uppercase tracking-wider text-[10px] mb-1" style={{ color: 'var(--hud-text-dim)' }}>
-                        {command.label}
+                        {t(command.labelKey)}
                       </div>
                       <code className="text-[12px] break-all" style={{ color: 'var(--hud-text)' }}>{command.command}</code>
                     </div>

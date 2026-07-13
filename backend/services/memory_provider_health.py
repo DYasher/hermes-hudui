@@ -20,9 +20,17 @@ def utc_now_iso() -> str:
     return memory_service.utc_now_iso()
 
 
-def dependency_checks(info: dict[str, Any]) -> list[dict[str, Any]]:
+def dependencies_for_mode(info: dict[str, Any], mode: str = "") -> list[dict[str, Any]]:
+    if mode:
+        for candidate in info.get("modes", []):
+            if candidate.get("id") == mode and "dependencies" in candidate:
+                return list(candidate.get("dependencies") or [])
+    return list(info.get("dependencies", []))
+
+
+def dependency_checks(info: dict[str, Any], mode: str = "") -> list[dict[str, Any]]:
     checks = []
-    for dep in info.get("dependencies", []):
+    for dep in dependencies_for_mode(info, mode):
         kind = dep.get("kind")
         name = dep.get("name")
         present = False

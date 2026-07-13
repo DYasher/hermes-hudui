@@ -85,7 +85,7 @@ def provider_payload() -> dict[str, Any]:
             if current_mode
             else memory_provider_config.required_state(info, config_values)
         )
-        checks = memory_provider_health.dependency_checks(info)
+        checks = memory_provider_health.dependency_checks(info, current_mode)
         dependency_ok = all(check["ok"] for check in checks)
         active = key == active_provider
         if not configured:

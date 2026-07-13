@@ -187,12 +187,29 @@ def test_memory_panel_renders_mode_aware_install_guide() -> None:
     install_block = panel.split("function ProviderInstallGuideTab", 1)[1].split("function MemoryProvidersPanel", 1)[0]
 
     assert "modeCommands" in install_block
-    assert "provider.config_modes.map(mode => ({ mode, commands }))" in install_block
+    assert "modeInstallCommands(provider, mode" in install_block
     assert "item.mode.label" in install_block
     assert "item.mode.description" in install_block
     assert "modeRequirementLabels(provider, item.mode)" in install_block
     assert "memory.minimumConfig" in install_block
     assert "item.commands.map(command =>" in install_block
+
+
+def test_memory_panel_renders_mode_specific_setup_steps_and_dependencies() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    translations = (ROOT / "frontend/src/i18n/translations.ts").read_text()
+    install_block = panel.split("function ProviderInstallGuideTab", 1)[1].split("function MemoryProvidersPanel", 1)[0]
+
+    assert "dependencies: MemoryProviderDependency[]" in panel
+    assert "setup_command?: string" in panel
+    assert "status_command?: string" in panel
+    assert "next_steps?: string" in panel
+    assert "modeDependencyLabels(item.mode.dependencies)" in install_block
+    assert "memory.modeDependencies" in install_block
+    assert "memory.nextSteps" in install_block
+    assert "item.mode.next_steps" in install_block
+    assert "'memory.modeDependencies'" in translations
+    assert "'memory.nextSteps'" in translations
 
 
 def test_memory_panel_shows_provider_config_requirements_and_next_step() -> None:

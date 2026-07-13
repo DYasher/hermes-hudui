@@ -614,6 +614,37 @@ def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_hom
     assert provider["capabilities"]["external_read_mode"] == "provider_summary"
 
 
+def test_community_provider_modes_include_mode_specific_setup_guidance(hermes_home: Path) -> None:
+    status = get_memory_providers()
+    cognee_modes = {mode["id"]: mode for mode in status["providers"]["cognee"]["config_modes"]}
+    agentmemory_modes = {mode["id"]: mode for mode in status["providers"]["agentmemory"]["config_modes"]}
+    memos_modes = {mode["id"]: mode for mode in status["providers"]["memos"]["config_modes"]}
+
+    assert "pip install cognee" in cognee_modes["python_cli"]["setup_command"]
+    assert "COGNEE_API_URL" in cognee_modes["docker_api"]["next_steps"]
+    assert "COGNEE_MCP_URL" in cognee_modes["mcp_http"]["next_steps"]
+    assert agentmemory_modes["rest_server"]["status_command"] == "curl -sS $AGENTMEMORY_URL/agentmemory/health"
+    assert "npx -y @agentmemory/mcp" in agentmemory_modes["mcp_server"]["setup_command"]
+    assert memos_modes["cloud"]["dependencies"] == []
+    assert "MEMOS_BASE_URL" in memos_modes["self_hosted"]["next_steps"]
+
+
+def test_provider_payload_uses_mode_specific_dependency_checks(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "AGENTMEMORY_URL=http://127.0.0.1:3111\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.shutil.which",
+        lambda name: "/usr/bin/agentmemory" if name == "agentmemory" else None,
+    )
+
+    status = get_memory_providers()
+    checks = status["providers"]["agentmemory"]["checks"]
+
+    assert checks == [{"kind": "command", "name": "agentmemory", "ok": True}]
+
+
 def test_memory_provider_status_reads_config(hermes_home: Path) -> None:
     _config_file(hermes_home).write_text(
         "memory:\n  provider: holographic\n  memory_char_limit: 3000\n",
@@ -1006,6 +1037,50 @@ def test_external_view_for_community_provider_reports_safe_config_summary(hermes
     assert "secret-memos-key" not in str(result)
 
 
+def test_external_view_for_agentmemory_rest_reads_memories(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "AGENTMEMORY_URL=http://127.0.0.1:3111\n",
+        encoding="utf-8",
+    )
+
+    seen_urls: list[str] = []
+
+    class FakeResponse:
+        def getcode(self) -> int:
+            return 200
+
+        def read(self) -> bytes:
+            return (
+                b'{"total":2,"memories":['
+                b'{"id":"mem_1","content":"First memory","type":"fact","concepts":["alpha"],"strength":8,"createdAt":"2026-07-01T00:00:00Z","updatedAt":"2026-07-02T00:00:00Z"},'
+                b'{"id":"mem_2","content":"Second memory","type":"preference","concepts":["beta"],"strength":6}'
+                b"]}"
+            )
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_urls.append(request.full_url)
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_external.urlopen", fake_urlopen)
+
+    result = get_memory_provider_external_view("agentmemory")
+
+    assert seen_urls == ["http://127.0.0.1:3111/agentmemory/memories?limit=100"]
+    assert result["provider"] == "agentmemory"
+    assert result["available"] is True
+    assert result["reason"] == "agentmemory_rest"
+    assert result["summary"]["total"] == 2
+    assert result["summary"]["categories"] == {"fact": 1, "preference": 1}
+    assert result["items"][0]["id"] == "mem_1"
+    assert result["items"][0]["content"] == "First memory"
+    assert result["items"][0]["category"] == "fact"
+    assert result["items"][0]["tags"] == ["alpha"]
+    assert result["items"][0]["trust_score"] == 0.8
+
+
 def test_memory_provider_check_runs_agentmemory_runtime_probe(monkeypatch, hermes_home: Path) -> None:
     _env_file(hermes_home).write_text(
         "AGENTMEMORY_URL=http://127.0.0.1:3111\n",
@@ -1154,6 +1229,29 @@ def test_memory_provider_check_runs_agentmemory_mcp_command_probe(monkeypatch, h
             "error": "",
         }
     ]
+
+
+def test_memory_provider_check_recomputes_dependencies_for_selected_mode(monkeypatch, hermes_home: Path) -> None:
+    (hermes_home / "agentmemory.json").write_text(
+        '{"AGENTMEMORY_MCP_COMMAND":"npx -y @agentmemory/mcp"}\n',
+        encoding="utf-8",
+    )
+
+    def fake_which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in {"hermes", "npx"} else None
+
+    monkeypatch.setattr("backend.services.memory_provider_health.shutil.which", fake_which)
+    monkeypatch.setattr(
+        "backend.services.memory_provider_health.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Built-in only\n", stderr=""),
+    )
+
+    result = check_memory_provider_status(MemoryProviderBody(provider="agentmemory", mode="mcp_server"))
+
+    assert result["health"]["dependencies"] == {
+        "ok": True,
+        "checks": [{"kind": "command", "name": "npx", "ok": True}],
+    }
 
 
 def test_memory_provider_check_uses_selected_config_mode_for_runtime_probe(monkeypatch, hermes_home: Path) -> None:

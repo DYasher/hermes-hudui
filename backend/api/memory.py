@@ -469,6 +469,7 @@ def check_memory_provider_status(body: MemoryProviderBody):
             info = MEMORY_PROVIDER_OPTIONS[provider]
             values = memory_provider_config.provider_config_values(provider)
             mode = memory_provider_config.validate_config_mode(info, body.mode)
+            resolved_mode = mode or provider_payload.get("current_mode", "")
             if mode:
                 configured, missing_fields, missing_any = memory_provider_config.required_state_for_mode(
                     info,
@@ -482,10 +483,15 @@ def check_memory_provider_status(body: MemoryProviderBody):
                 }
             else:
                 required_config = provider_payload["health"]["required_config"]
+            dependency_checks = memory_provider_health.dependency_checks(info, resolved_mode)
             health = {
                 **provider_payload["health"],
                 "checked_at": memory_provider_health.utc_now_iso(),
                 "required_config": required_config,
+                "dependencies": {
+                    "ok": all(check["ok"] for check in dependency_checks),
+                    "checks": dependency_checks,
+                },
                 "runtime": memory_provider_health.provider_runtime_checks(provider, mode),
                 "status_command": status,
             }

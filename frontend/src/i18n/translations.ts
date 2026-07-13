@@ -445,6 +445,8 @@ export const translations = {
     'memory.offCommand': 'Disable',
     'memory.installGuideHint': 'Commands are shown for review only; the HUD will not run install, start, or uninstall steps automatically.',
     'memory.installGuideRisk': 'Review writes to ~/.hermes, external service ports, and package manager effects before running commands.',
+    'memory.modeDependencies': 'Mode dependencies',
+    'memory.nextSteps': 'Next steps',
 
     // Skills
     'skills.title': 'Skills',
@@ -1277,6 +1279,8 @@ export const translations = {
     'memory.offCommand': '关闭',
     'memory.installGuideHint': '这里只展示命令供核对；HUD 不会自动执行安装、启动或卸载步骤。',
     'memory.installGuideRisk': '执行前请确认对 ~/.hermes、外部服务端口和包管理器的影响。',
+    'memory.modeDependencies': '模式依赖',
+    'memory.nextSteps': '下一步',
 
     // Skills
     'skills.title': '技能',

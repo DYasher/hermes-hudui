@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from backend.services import memory_service
 from backend.services import memory_provider_config
@@ -275,9 +279,126 @@ def provider_summary_external_view(provider: str) -> dict[str, Any]:
     }
 
 
+def _join_http_url(base_url: str, path: str) -> str:
+    suffix = path if path.startswith("/") else f"/{path}"
+    return base_url.rstrip("/") + suffix
+
+
+def _memory_tags(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    if raw is None:
+        return []
+    return [item.strip() for item in str(raw).split(",") if item.strip()]
+
+
+def _memory_trust_score(raw: dict[str, Any]) -> float:
+    score = raw.get("trust_score")
+    if isinstance(score, int | float):
+        return float(score)
+    strength = raw.get("strength")
+    if isinstance(strength, int | float):
+        return max(0.0, min(float(strength) / 10.0, 1.0))
+    return 1.0
+
+
+def _agentmemory_item(raw: dict[str, Any]) -> dict[str, Any]:
+    category = str(raw.get("type") or raw.get("category") or "memory")
+    return {
+        "id": str(raw.get("id") or raw.get("memory_id") or raw.get("title") or ""),
+        "content": str(raw.get("content") or raw.get("text") or raw.get("summary") or ""),
+        "category": category,
+        "tags": _memory_tags(raw.get("concepts") or raw.get("tags")),
+        "trust_score": _memory_trust_score(raw),
+        "retrieval_count": int(raw.get("retrieval_count") or raw.get("retrievalCount") or 0),
+        "helpful_count": int(raw.get("helpful_count") or raw.get("helpfulCount") or 0),
+        "created_at": str(raw.get("createdAt") or raw.get("created_at") or ""),
+        "updated_at": str(raw.get("updatedAt") or raw.get("updated_at") or ""),
+    }
+
+
+def _agentmemory_secret() -> str:
+    env_values = memory_provider_config.read_env_values()
+    return env_values.get("AGENTMEMORY_SECRET") or os.environ.get("AGENTMEMORY_SECRET", "")
+
+
+def agentmemory_rest_external_view(limit: int = 100) -> dict[str, Any]:
+    values = memory_provider_config.provider_config_values("agentmemory")
+    endpoint = str(values.get("AGENTMEMORY_URL", {}).get("value") or "").strip()
+    if not endpoint:
+        return provider_summary_external_view("agentmemory")
+
+    url = _join_http_url(endpoint, f"/agentmemory/memories?limit={limit}")
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Hermes-HUD/read-only-memory-view",
+    }
+    secret = _agentmemory_secret()
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
+        headers["X-AgentMemory-Secret"] = secret
+
+    response = None
+    try:
+        response = urlopen(Request(url, headers=headers, method="GET"), timeout=3)
+        payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        return {
+            "provider": "agentmemory",
+            "available": False,
+            "readonly": True,
+            "reason": "agentmemory_rest_failed",
+            "error": f"HTTP {exc.code}",
+            "summary": {"total": 0, "categories": {}},
+            "items": [],
+        }
+    except (URLError, OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "provider": "agentmemory",
+            "available": False,
+            "readonly": True,
+            "reason": "agentmemory_rest_failed",
+            "error": str(getattr(exc, "reason", exc)),
+            "summary": {"total": 0, "categories": {}},
+            "items": [],
+        }
+    finally:
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
+
+    memories = payload.get("memories") if isinstance(payload, dict) else []
+    if not isinstance(memories, list):
+        memories = []
+    items = [_agentmemory_item(item) for item in memories if isinstance(item, dict)]
+    categories: dict[str, int] = {}
+    for item in items:
+        category = item["category"] or "memory"
+        categories[category] = categories.get(category, 0) + 1
+    total = payload.get("total") if isinstance(payload, dict) else None
+    return {
+        "provider": "agentmemory",
+        "available": True,
+        "readonly": True,
+        "reason": "agentmemory_rest",
+        "summary": {
+            "total": int(total) if isinstance(total, int | float) else len(items),
+            "categories": categories,
+        },
+        "items": items,
+    }
+
+
 def external_view(provider: str) -> dict[str, Any]:
     if provider == "holographic":
         return holographic_external_view()
+    if provider == "agentmemory":
+        values = memory_provider_config.provider_config_values(provider)
+        mode = memory_provider_config.current_config_mode(MEMORY_PROVIDER_OPTIONS[provider], values)
+        if mode == "rest_server":
+            return agentmemory_rest_external_view()
     if MEMORY_PROVIDER_CAPABILITIES.get(provider, {}).get("external_read_mode") == "provider_summary":
         return provider_summary_external_view(provider)
     return {
