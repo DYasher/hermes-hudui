@@ -947,6 +947,21 @@ def test_provider_payload_includes_external_view_summary(hermes_home: Path) -> N
     assert honcho["external_view"]["reason"] == "provider_specific_api_not_configured"
 
 
+def test_agentmemory_rest_payload_advertises_readable_external_facts(hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "AGENTMEMORY_URL=http://127.0.0.1:3111\n",
+        encoding="utf-8",
+    )
+
+    status = get_memory_providers()
+    external_view = status["providers"]["agentmemory"]["external_view"]
+
+    assert external_view["available"] is True
+    assert external_view["endpoint"] == "/api/memory/providers/agentmemory/external"
+    assert external_view["view_type"] == "facts"
+    assert external_view["reason"] == "agentmemory_rest"
+
+
 def test_holographic_external_view_reads_local_facts_without_mutation(hermes_home: Path) -> None:
     db_path = hermes_home / "memory_store.db"
     conn = sqlite3.connect(db_path)

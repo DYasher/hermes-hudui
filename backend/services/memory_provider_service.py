@@ -46,7 +46,11 @@ def provider_schema_source(provider: str) -> dict[str, Any]:
     }
 
 
-def provider_external_view_info(provider: str) -> dict[str, Any]:
+def provider_external_view_info(
+    provider: str,
+    config_values: dict[str, dict[str, Any]] | None = None,
+    current_mode: str = "",
+) -> dict[str, Any]:
     if provider == "holographic":
         return {
             "available": True,
@@ -55,6 +59,18 @@ def provider_external_view_info(provider: str) -> dict[str, Any]:
             "view_type": "facts",
             "reason": "",
         }
+    if provider == "agentmemory":
+        endpoint_configured = bool(
+            (config_values or {}).get("AGENTMEMORY_URL", {}).get("configured")
+        )
+        if current_mode == "rest_server" and endpoint_configured:
+            return {
+                "available": True,
+                "readonly": True,
+                "endpoint": "/api/memory/providers/agentmemory/external",
+                "view_type": "facts",
+                "reason": "agentmemory_rest",
+            }
     if provider_capabilities(provider).get("external_read_mode") == "provider_summary":
         return {
             "available": True,
@@ -114,7 +130,7 @@ def provider_payload() -> dict[str, Any]:
             "config_values": config_values,
             "capabilities": provider_capabilities(key),
             "schema_source": provider_schema_source(key),
-            "external_view": provider_external_view_info(key),
+            "external_view": provider_external_view_info(key, config_values, current_mode),
             "health": memory_provider_health.provider_health(
                 key,
                 active=active,
