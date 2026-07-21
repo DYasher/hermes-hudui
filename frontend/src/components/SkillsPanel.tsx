@@ -357,6 +357,10 @@ async function importSkillsZip(file: File, overwrite: boolean, preview: boolean)
   return readJsonResponse(res)
 }
 
+function isZipArchiveFile(file: File) {
+  return file.name.toLowerCase().endsWith('.zip')
+}
+
 async function downloadSkillsBackup() {
   const res = await fetch('/api/skills/backup')
   if (!res.ok) {
@@ -1318,11 +1322,18 @@ function SkillImportModal({
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <input
             type="file"
-            accept=".zip,application/zip"
+            accept=".zip,application/zip,application/x-zip-compressed"
             disabled={Boolean(busy)}
             onChange={event => {
-              setSelectedZipFile(event.target.files?.[0] || null)
+              const file = event.target.files?.[0] || null
               resetPreview()
+              if (file && !isZipArchiveFile(file)) {
+                setSelectedZipFile(null)
+                setError(t('skills.zipOnly'))
+                event.currentTarget.value = ''
+                return
+              }
+              setSelectedZipFile(file)
             }}
             className="w-full text-[13px]"
             style={{ color: 'var(--hud-text)' }}

@@ -262,6 +262,15 @@ def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
     assert "skills.importWillSkip" in panel
 
 
+def test_skills_restore_rejects_non_zip_files_before_preview() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "isZipArchiveFile" in panel
+    assert "file.name.toLowerCase().endsWith('.zip')" in panel
+    assert "skills.zipOnly" in panel
+    assert "application/x-zip-compressed" in panel
+
+
 def test_skills_market_shows_installed_and_per_item_install_status() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
