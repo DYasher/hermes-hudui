@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import subprocess
 import zipfile
 from pathlib import Path
@@ -748,6 +749,150 @@ def test_import_skills_zip_installs_multiple_skills_and_rejects_zip_slip(
             malicious.getvalue(),
             filename="bad.zip",
         )
+
+
+def test_preview_skills_zip_classifies_conflicts_without_writing(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    existing_skill = hermes_home / "skills" / "research" / "existing" / "SKILL.md"
+    existing_skill.parent.mkdir(parents=True)
+    existing_skill.write_text("# Existing\n\nKeep this content.\n", encoding="utf-8")
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(
+            "bundle/skills/productivity/new-skill/SKILL.md",
+            "# New skill\n",
+        )
+        zf.writestr(
+            "bundle/skills/research/existing/SKILL.md",
+            "# Replacement\n",
+        )
+
+    skipped_preview = skills_manager.preview_skills_zip_bytes(
+        archive.getvalue(),
+        filename="bundle.zip",
+        overwrite=False,
+    )
+    skipped_actions = {
+        item["name"]: item["status"] for item in skipped_preview["items"]
+    }
+
+    assert skipped_preview["preview"] is True
+    assert skipped_preview["filename"] == "bundle.zip"
+    assert skipped_preview["add_count"] == 1
+    assert skipped_preview["overwrite_count"] == 0
+    assert skipped_preview["skip_count"] == 1
+    assert skipped_actions == {"new-skill": "add", "existing": "skip"}
+
+    overwrite_preview = skills_manager.preview_skills_zip_bytes(
+        archive.getvalue(),
+        filename="bundle.zip",
+        overwrite=True,
+    )
+    overwrite_actions = {
+        item["name"]: item["status"] for item in overwrite_preview["items"]
+    }
+
+    assert overwrite_preview["add_count"] == 1
+    assert overwrite_preview["overwrite_count"] == 1
+    assert overwrite_preview["skip_count"] == 0
+    assert overwrite_actions == {"new-skill": "add", "existing": "overwrite"}
+    assert not (
+        hermes_home / "skills" / "productivity" / "new-skill"
+    ).exists()
+    assert existing_skill.read_text(encoding="utf-8") == (
+        "# Existing\n\nKeep this content.\n"
+    )
+    backup_root = (
+        Path(os.environ["XDG_CACHE_HOME"]) / "hermes-hudui" / "skill-backups"
+    )
+    assert not backup_root.exists()
+
+
+def test_import_skills_zip_overwrites_only_after_preview(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    existing_skill = hermes_home / "skills" / "research" / "existing" / "SKILL.md"
+    existing_skill.parent.mkdir(parents=True)
+    existing_skill.write_text("# Existing\n", encoding="utf-8")
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(
+            "bundle/skills/research/existing/SKILL.md",
+            "# Replacement\n",
+        )
+
+    result = skills_manager.import_skills_zip_bytes(
+        archive.getvalue(),
+        filename="bundle.zip",
+        overwrite=True,
+    )
+
+    assert result["installed_count"] == 1
+    assert result["items"][0]["status"] == "overwritten"
+    assert existing_skill.read_text(encoding="utf-8") == "# Replacement\n"
+    backup_root = (
+        Path(os.environ["XDG_CACHE_HOME"]) / "hermes-hudui" / "skill-backups"
+    )
+    backups = list(backup_root.rglob("SKILL.md"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "# Existing\n"
+
+
+def test_preview_skills_zip_api_dispatches_without_importing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from starlette.requests import Request
+
+    captured: dict[str, object] = {}
+
+    def fake_preview(data, filename, overwrite):
+        captured.update(data=data, filename=filename, overwrite=overwrite)
+        return {"preview": True, "items": []}
+
+    def fail_import(*args, **kwargs):
+        raise AssertionError("preview request must not import files")
+
+    async def direct_run(func, *args):
+        return func(*args)
+
+    async def receive():
+        return {"type": "http.request", "body": b"zip payload", "more_body": False}
+
+    monkeypatch.setattr(skills_api, "preview_skills_zip_bytes", fake_preview)
+    monkeypatch.setattr(skills_api, "import_skills_zip_bytes", fail_import)
+    monkeypatch.setattr(skills_api, "run_in_threadpool", direct_run)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/skills/import-zip",
+            "headers": [],
+        },
+        receive,
+    )
+
+    result = asyncio.run(
+        skills_api.import_skills_zip(
+            request,
+            filename="preview.zip",
+            overwrite=True,
+            preview=True,
+        )
+    )
+
+    assert result == {"preview": True, "items": []}
+    assert captured == {
+        "data": b"zip payload",
+        "filename": "preview.zip",
+        "overwrite": True,
+    }
 
 
 def test_skill_market_search_normalizes_hermes_cli_json(

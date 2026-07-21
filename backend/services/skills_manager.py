@@ -300,59 +300,123 @@ def _is_under_parts(parts: tuple[str, ...], root: tuple[str, ...]) -> bool:
     return len(parts) >= len(root) and parts[: len(root)] == root
 
 
+def _validate_zip_payload(data: bytes) -> None:
+    if len(data) > _MAX_ZIP_BYTES:
+        raise ValueError("zip archive is too large")
+    if not zipfile.is_zipfile(io.BytesIO(data)):
+        raise ValueError("file must be a zip archive")
+
+
+def _scan_skill_zip(
+    archive: zipfile.ZipFile,
+) -> tuple[
+    list[tuple[zipfile.ZipInfo, tuple[str, ...]]],
+    dict[tuple[str, ...], tuple[str, str]],
+]:
+    infos = archive.infolist()
+    if len(infos) > _MAX_ZIP_FILES:
+        raise ValueError("zip archive contains too many files")
+    if sum(max(info.file_size, 0) for info in infos) > _MAX_UNCOMPRESSED_BYTES:
+        raise ValueError("zip archive is too large after extraction")
+
+    entries: list[tuple[zipfile.ZipInfo, tuple[str, ...]]] = []
+    roots: list[tuple[tuple[str, ...], str, str]] = []
+    for info in infos:
+        parts = _zip_member_parts(info.filename)
+        if _zip_info_is_symlink(info):
+            raise ValueError("unsafe zip symlink")
+        entries.append((info, parts))
+        root = _skill_root_from_parts(parts)
+        if root:
+            _validate_slug(root[1], "category")
+            _validate_slug(root[2], "name")
+            roots.append(root)
+
+    unique_roots: dict[tuple[str, ...], tuple[str, str]] = {}
+    for root_parts, category, name in roots:
+        unique_roots[root_parts] = (category, name)
+    if not unique_roots:
+        raise ValueError("zip archive does not contain any SKILL.md files")
+    return entries, unique_roots
+
+
+def _plan_skill_imports(
+    unique_roots: dict[tuple[str, ...], tuple[str, str]],
+    skills_dir: Path,
+    overwrite: bool,
+) -> list[tuple[tuple[str, ...], str, str, str, Path]]:
+    planned = []
+    for root_parts, (category, name) in sorted(unique_roots.items()):
+        dest_dir = skills_dir / category / name
+        if not dest_dir.exists():
+            status = "add"
+        elif overwrite:
+            status = "overwrite"
+        else:
+            status = "skip"
+        planned.append((root_parts, category, name, status, dest_dir))
+    return planned
+
+
+def preview_skills_zip_bytes(
+    data: bytes,
+    filename: str = "skills.zip",
+    overwrite: bool = False,
+    hermes_dir: str | None = None,
+) -> dict[str, Any]:
+    _validate_zip_payload(data)
+    skills_dir = _skills_dir(hermes_dir)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        _, unique_roots = _scan_skill_zip(archive)
+
+    planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
+    items = [
+        {
+            "name": name,
+            "category": category,
+            "status": status,
+            "path": str(dest_dir / "SKILL.md"),
+        }
+        for _, category, name, status, dest_dir in planned
+    ]
+    return {
+        "preview": True,
+        "filename": filename,
+        "add_count": sum(1 for item in items if item["status"] == "add"),
+        "overwrite_count": sum(
+            1 for item in items if item["status"] == "overwrite"
+        ),
+        "skip_count": sum(1 for item in items if item["status"] == "skip"),
+        "items": items,
+    }
+
+
 def import_skills_zip_bytes(
     data: bytes,
     filename: str = "skills.zip",
     overwrite: bool = False,
     hermes_dir: str | None = None,
 ) -> dict[str, Any]:
-    if len(data) > _MAX_ZIP_BYTES:
-        raise ValueError("zip archive is too large")
-    if not zipfile.is_zipfile(io.BytesIO(data)):
-        raise ValueError("file must be a zip archive")
-
+    _validate_zip_payload(data)
     skills_dir = _skills_dir(hermes_dir)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        infos = archive.infolist()
-        if len(infos) > _MAX_ZIP_FILES:
-            raise ValueError("zip archive contains too many files")
-        if sum(max(info.file_size, 0) for info in infos) > _MAX_UNCOMPRESSED_BYTES:
-            raise ValueError("zip archive is too large after extraction")
-
-        entries: list[tuple[zipfile.ZipInfo, tuple[str, ...]]] = []
-        roots: list[tuple[tuple[str, ...], str, str]] = []
-        for info in infos:
-            parts = _zip_member_parts(info.filename)
-            if _zip_info_is_symlink(info):
-                raise ValueError("unsafe zip symlink")
-            entries.append((info, parts))
-            root = _skill_root_from_parts(parts)
-            if root:
-                _validate_slug(root[1], "category")
-                _validate_slug(root[2], "name")
-                roots.append(root)
-
-        unique_roots: dict[tuple[str, ...], tuple[str, str]] = {}
-        for root_parts, category, name in roots:
-            unique_roots[root_parts] = (category, name)
-        if not unique_roots:
-            raise ValueError("zip archive does not contain any SKILL.md files")
+        entries, unique_roots = _scan_skill_zip(archive)
+        planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
 
         items: list[dict[str, Any]] = []
-        for root_parts, (category, name) in sorted(unique_roots.items()):
-            dest_dir = skills_dir / category / name
-            if dest_dir.exists():
-                if not overwrite:
-                    items.append(
-                        {
-                            "name": name,
-                            "category": category,
-                            "status": "skipped",
-                            "reason": "exists",
-                            "path": str(dest_dir / "SKILL.md"),
-                        }
-                    )
-                    continue
+        for root_parts, category, name, action, dest_dir in planned:
+            if action == "skip":
+                items.append(
+                    {
+                        "name": name,
+                        "category": category,
+                        "status": "skipped",
+                        "reason": "exists",
+                        "path": str(dest_dir / "SKILL.md"),
+                    }
+                )
+                continue
+            if action == "overwrite":
                 _backup_directory(dest_dir, skills_dir.resolve(), "import-overwrite")
                 shutil.rmtree(dest_dir)
             dest_dir.mkdir(parents=True, exist_ok=True)
@@ -378,7 +442,7 @@ def import_skills_zip_bytes(
                 {
                     "name": name,
                     "category": category,
-                    "status": "installed",
+                    "status": "overwritten" if action == "overwrite" else "installed",
                     "files": copied,
                     "path": str(dest_dir / "SKILL.md"),
                 }
@@ -387,7 +451,9 @@ def import_skills_zip_bytes(
     clear_cache()
     return {
         "filename": filename,
-        "installed_count": sum(1 for item in items if item["status"] == "installed"),
+        "installed_count": sum(
+            1 for item in items if item["status"] in {"installed", "overwritten"}
+        ),
         "items": items,
     }
 

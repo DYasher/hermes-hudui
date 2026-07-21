@@ -15,6 +15,7 @@ from backend.services.skills_manager import (
     delete_skill,
     import_skills_zip_bytes,
     install_market_skill,
+    preview_skills_zip_bytes,
     save_skill_content,
     search_skill_market,
     set_skill_enabled,
@@ -167,11 +168,13 @@ async def import_skills_zip(
     request: Request,
     filename: str = Query("skills.zip"),
     overwrite: bool = Query(False),
+    preview: bool = Query(False),
 ):
     try:
         payload = await request.body()
+        operation = preview_skills_zip_bytes if preview else import_skills_zip_bytes
         result = await run_in_threadpool(
-            import_skills_zip_bytes,
+            operation,
             payload,
             filename,
             overwrite,
