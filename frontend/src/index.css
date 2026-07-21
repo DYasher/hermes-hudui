@@ -558,6 +558,33 @@ select:focus-visible {
   background: color-mix(in srgb, var(--hud-bg-hover) 86%, transparent);
 }
 
+.skill-filter-trigger {
+  color: var(--hud-text);
+  border: 1px solid var(--hud-border);
+  background: var(--hud-solid-block);
+}
+
+.skill-filter-menu {
+  border: 1px solid var(--hud-border-bright);
+  border-radius: 6px;
+  color: var(--hud-text);
+  background: color-mix(in srgb, var(--hud-bg-hover) 62%, transparent);
+  backdrop-filter: blur(16px) saturate(1.14);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.skill-filter-option {
+  border-radius: 4px;
+  color: var(--hud-text);
+  background: transparent;
+}
+
+.skill-filter-option:hover,
+.skill-filter-option[aria-selected="true"] {
+  color: var(--hud-primary);
+  background: color-mix(in srgb, var(--hud-primary) 14%, transparent);
+}
+
 .hud-inline-input {
   border-radius: 12px;
 }

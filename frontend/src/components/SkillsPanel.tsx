@@ -78,11 +78,6 @@ type SkillImportResult = {
 const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
 const TRANSLATION_MODEL_STORAGE_KEY = 'hud-skill-translation-model'
 
-const skillFilterOptionStyle = {
-  backgroundColor: 'var(--hud-glass-panel)',
-  color: 'var(--hud-text)',
-}
-
 const SKILL_CATEGORY_TRANSLATIONS = {
   apple: {
     labelKey: 'skills.category.apple.label',
@@ -207,6 +202,95 @@ function storeValue(key: string, value: string) {
   } catch {
     // Local storage can be unavailable in private or embedded contexts.
   }
+}
+
+function SkillFilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const selectedLabel = options.find(option => option.value === value)?.label || value
+
+  useEffect(() => {
+    if (!open) return
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  const selectOption = (nextValue: string) => {
+    onChange(nextValue)
+    setOpen(false)
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        onKeyDown={event => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+        className="skill-filter-trigger flex min-w-[112px] items-center justify-between gap-3 px-2 py-1 text-[12px] cursor-pointer"
+      >
+        <span>{selectedLabel}</span>
+        <span aria-hidden="true" style={{ color: 'var(--hud-primary)' }}>v</span>
+      </button>
+      {open && (
+        <div role="listbox" aria-label={label} className="skill-filter-menu absolute right-0 top-full z-40 mt-1 min-w-full p-1">
+          {options.map(option => {
+            const selected = option.value === value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => selectOption(option.value)}
+                className="skill-filter-option flex w-full min-w-[128px] items-center justify-between gap-3 px-2 py-1.5 text-left text-[12px] cursor-pointer"
+              >
+                <span>{option.label}</span>
+                <span aria-hidden="true" className="w-3 text-center">{selected ? '*' : ''}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 async function readJsonResponse(res: Response) {
@@ -1795,22 +1879,32 @@ export default function SkillsPanel() {
                 className="min-w-0 px-2 py-1.5 text-[12px] outline-none"
                 style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
               />
-              <label className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+              <div data-skill-filter="status" className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
                 <span>{t('skills.statusFilter')}</span>
-                <select data-skill-filter-status value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)', colorScheme: 'dark' }}>
-                  <option value="all" style={skillFilterOptionStyle}>{t('skills.allStatuses')}</option>
-                  <option value="enabled" style={skillFilterOptionStyle}>{t('skills.enabled')}</option>
-                  <option value="disabled" style={skillFilterOptionStyle}>{t('skills.disabled')}</option>
-                </select>
-              </label>
-              <label className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+                <SkillFilterSelect
+                  label={t('skills.statusFilter')}
+                  value={statusFilter}
+                  onChange={value => setStatusFilter(value as typeof statusFilter)}
+                  options={[
+                    { value: 'all', label: t('skills.allStatuses') },
+                    { value: 'enabled', label: t('skills.enabled') },
+                    { value: 'disabled', label: t('skills.disabled') },
+                  ]}
+                />
+              </div>
+              <div data-skill-filter="type" className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
                 <span>{t('skills.typeFilter')}</span>
-                <select data-skill-filter-type value={typeFilter} onChange={event => setTypeFilter(event.target.value as typeof typeFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)', colorScheme: 'dark' }}>
-                  <option value="all" style={skillFilterOptionStyle}>{t('skills.allTypes')}</option>
-                  <option value="custom" style={skillFilterOptionStyle}>{t('skills.customType')}</option>
-                  <option value="builtin" style={skillFilterOptionStyle}>{t('skills.builtinType')}</option>
-                </select>
-              </label>
+                <SkillFilterSelect
+                  label={t('skills.typeFilter')}
+                  value={typeFilter}
+                  onChange={value => setTypeFilter(value as typeof typeFilter)}
+                  options={[
+                    { value: 'all', label: t('skills.allTypes') },
+                    { value: 'custom', label: t('skills.customType') },
+                    { value: 'builtin', label: t('skills.builtinType') },
+                  ]}
+                />
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{selectedCountLabel}</span>

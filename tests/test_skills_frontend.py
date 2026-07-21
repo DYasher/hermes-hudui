@@ -227,16 +227,21 @@ def test_skills_panel_exposes_search_filters_and_backup_restore_actions() -> Non
     assert "skills.confirmRestore" in panel
 
 
-def test_skills_filter_options_use_theme_aware_native_dropdown_colors() -> None:
+def test_skills_filters_use_theme_aware_translucent_popovers() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+    styles = (ROOT / "frontend/src/index.css").read_text()
 
-    assert "skillFilterOptionStyle" in panel
-    assert "data-skill-filter-status" in panel
-    assert "data-skill-filter-type" in panel
-    assert "style={skillFilterOptionStyle}" in panel
-    assert "colorScheme: 'dark'" in panel
-    assert "backgroundColor: 'var(--hud-glass-panel)'" in panel
-    assert "backgroundColor: 'var(--hud-bg-panel)'" not in panel
+    assert "function SkillFilterSelect" in panel
+    assert 'data-skill-filter="status"' in panel
+    assert 'data-skill-filter="type"' in panel
+    assert 'aria-haspopup="listbox"' in panel
+    assert 'role="listbox"' in panel
+    assert "skill-filter-menu" in panel
+    assert "skill-filter-option" in panel
+    assert "skillFilterOptionStyle" not in panel
+    assert ".skill-filter-menu" in styles
+    assert "backdrop-filter: blur(16px)" in styles
+    assert "color-mix(in srgb, var(--hud-bg-hover) 62%, transparent)" in styles
 
 
 def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
