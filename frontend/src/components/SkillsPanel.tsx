@@ -47,6 +47,13 @@ type SkillMarketItem = {
   source?: string
   category?: string
   version?: string
+  installed?: boolean
+  installed_category?: string
+  installed_path?: string
+}
+type SkillMarketInstallState = {
+  status: 'installing' | 'success' | 'error'
+  message?: string
 }
 type SkillImportItem = {
   name: string
@@ -1286,33 +1293,70 @@ function SkillMarketModal({
   const [category, setCategory] = useState('')
   const [force, setForce] = useState(false)
   const [items, setItems] = useState<SkillMarketItem[]>([])
-  const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [activeInstall, setActiveInstall] = useState('')
+  const [installStates, setInstallStates] = useState<Record<string, SkillMarketInstallState>>({})
 
   const submitSearch = async () => {
-    setBusy('search')
-    setError('')
+    setSearching(true)
+    setSearchError('')
+    setInstallStates({})
     try {
       const result = await searchSkillMarket(query, source)
       setItems(result?.items || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setSearchError(err instanceof Error ? err.message : String(err))
     } finally {
-      setBusy('')
+      setSearching(false)
     }
   }
 
   const installItem = async (item: SkillMarketItem) => {
-    setBusy(item.identifier)
-    setError('')
+    if (item.installed && !force) return
+    setActiveInstall(item.identifier)
+    setInstallStates(current => ({
+      ...current,
+      [item.identifier]: { status: 'installing' },
+    }))
     try {
       await installMarketSkill(item.identifier, category, force)
+      setItems(current => current.map(candidate => (
+        candidate.identifier === item.identifier
+          ? {
+              ...candidate,
+              installed: true,
+              installed_category: category || candidate.installed_category || candidate.category || '',
+            }
+          : candidate
+      )))
+      setInstallStates(current => ({
+        ...current,
+        [item.identifier]: { status: 'success' },
+      }))
       onInstalled()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setInstallStates(current => ({
+        ...current,
+        [item.identifier]: {
+          status: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      }))
     } finally {
-      setBusy('')
+      setActiveInstall('')
     }
+  }
+
+  const installActionLabel = (
+    item: SkillMarketItem,
+    state: SkillMarketInstallState | undefined,
+  ) => {
+    if (state?.status === 'installing') return t('skills.installingSkill')
+    if (item.installed && !force) return t('skills.marketInstalled')
+    if (state?.status === 'error') return t('skills.retryInstall')
+    if (item.installed) return t('skills.reinstallSkill')
+    return t('skills.installSkill')
   }
 
   return (
@@ -1333,31 +1377,48 @@ function SkillMarketModal({
               ))}
             </select>
             <input value={category} onChange={event => setCategory(event.target.value)} placeholder={t('skills.category')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
-            <button type="button" onClick={submitSearch} disabled={busy === 'search'} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
-              {busy === 'search' ? '...' : t('skills.search')}
+            <button type="button" onClick={submitSearch} disabled={searching || Boolean(activeInstall)} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+              {searching ? '...' : t('skills.search')}
             </button>
           </div>
           <label className="mt-2 flex items-center gap-2 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
             <input type="checkbox" checked={force} onChange={event => setForce(event.target.checked)} />
             {t('skills.forceInstall')}
           </label>
-          {error && <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
+          {searchError && <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error)' }}>{searchError}</div>}
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
-          {items.map(item => (
-            <div key={item.identifier} className="p-3 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-solid-block)' }}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[14px] font-bold truncate" style={{ color: 'var(--hud-primary)' }}>{item.name}</div>
-                  <div className="text-[12px] font-mono truncate" style={{ color: 'var(--hud-text-dim)' }}>{item.identifier}</div>
-                  {item.description && <div className="mt-1 text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{item.description}</div>}
+          {items.map(item => {
+            const installState = installStates[item.identifier]
+            const installing = installState?.status === 'installing'
+            const installDisabled = searching || Boolean(activeInstall) || Boolean(item.installed && !force)
+            return (
+              <div key={item.identifier} className="p-3 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-solid-block)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-bold break-words" style={{ color: 'var(--hud-primary)' }}>{item.name}</div>
+                    <div className="text-[12px] font-mono break-all" style={{ color: 'var(--hud-text-dim)' }}>{item.identifier}</div>
+                    {item.installed && (
+                      <div className="mt-1 text-[11px]" style={{ color: 'var(--hud-primary)' }}>
+                        {t('skills.marketInstalled')}
+                        {item.installed_category ? ` · ${item.installed_category}` : ''}
+                      </div>
+                    )}
+                    {item.description && <div className="mt-1 text-[13px] break-words" style={{ color: 'var(--hud-text-dim)' }}>{item.description}</div>}
+                    {installState?.status === 'success' && (
+                      <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-primary)' }}>{t('skills.installSucceeded')}</div>
+                    )}
+                    {installState?.status === 'error' && (
+                      <div className="mt-2 text-[12px] break-words" style={{ color: 'var(--hud-error)' }}>{installState.message}</div>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => installItem(item)} disabled={installDisabled} className="shrink-0 px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+                    {installing ? t('skills.installingSkill') : installActionLabel(item, installState)}
+                  </button>
                 </div>
-                <button type="button" onClick={() => installItem(item)} disabled={Boolean(busy)} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
-                  {busy === item.identifier ? '...' : t('skills.installSkill')}
-                </button>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {items.length === 0 && (
             <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.marketEmpty')}</div>
           )}

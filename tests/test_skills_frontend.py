@@ -220,6 +220,26 @@ def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
     assert "skills.importWillSkip" in panel
 
 
+def test_skills_market_shows_installed_and_per_item_install_status() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "installed?: boolean" in panel
+    assert "installed_category?: string" in panel
+    assert "type SkillMarketInstallState" in panel
+    assert "const [searching, setSearching]" in panel
+    assert "const [activeInstall, setActiveInstall]" in panel
+    assert "const [installStates, setInstallStates]" in panel
+    assert "status: 'installing'" in panel
+    assert "status: 'success'" in panel
+    assert "status: 'error'" in panel
+    assert "item.installed && !force" in panel
+    assert "skills.marketInstalled" in panel
+    assert "skills.reinstallSkill" in panel
+    assert "skills.installingSkill" in panel
+    assert "skills.retryInstall" in panel
+    assert "skills.installSucceeded" in panel
+
+
 def test_skills_page_uses_internal_panel_scrolling() -> None:
     app = (ROOT / "frontend/src/App.tsx").read_text()
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
@@ -313,6 +333,11 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.importWillAdd': 'Add'" in translations
     assert "'skills.importWillOverwrite': 'Overwrite'" in translations
     assert "'skills.importWillSkip': 'Skip'" in translations
+    assert "'skills.marketInstalled': 'Installed'" in translations
+    assert "'skills.reinstallSkill': 'Reinstall'" in translations
+    assert "'skills.installingSkill': 'Installing...'" in translations
+    assert "'skills.retryInstall': 'Retry'" in translations
+    assert "'skills.installSucceeded': 'Installed successfully.'" in translations
     assert "'skills.category.data-science.label': 'Data Science'" in translations
     assert "'skills.category.data-science.description': 'Analysis, notebooks, datasets, and data workflows.'" in translations
     assert "'skills.original': '原文'" in translations
@@ -358,5 +383,10 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.importWillAdd': '新增'" in translations
     assert "'skills.importWillOverwrite': '覆盖'" in translations
     assert "'skills.importWillSkip': '跳过'" in translations
+    assert "'skills.marketInstalled': '已安装'" in translations
+    assert "'skills.reinstallSkill': '重新安装'" in translations
+    assert "'skills.installingSkill': '安装中...'" in translations
+    assert "'skills.retryInstall': '重试'" in translations
+    assert "'skills.installSucceeded': '安装成功。'" in translations
     assert "'skills.category.data-science.label': '数据科学'" in translations
     assert "'skills.category.data-science.description': '数据分析、Notebook、数据集和数据处理流程。'" in translations
