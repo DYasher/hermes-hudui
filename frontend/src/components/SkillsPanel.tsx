@@ -79,7 +79,7 @@ const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
 const TRANSLATION_MODEL_STORAGE_KEY = 'hud-skill-translation-model'
 
 const skillFilterOptionStyle = {
-  backgroundColor: 'var(--hud-bg-panel)',
+  backgroundColor: 'var(--hud-glass-panel)',
   color: 'var(--hud-text)',
 }
 

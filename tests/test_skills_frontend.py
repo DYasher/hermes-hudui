@@ -235,6 +235,8 @@ def test_skills_filter_options_use_theme_aware_native_dropdown_colors() -> None:
     assert "data-skill-filter-type" in panel
     assert "style={skillFilterOptionStyle}" in panel
     assert "colorScheme: 'dark'" in panel
+    assert "backgroundColor: 'var(--hud-glass-panel)'" in panel
+    assert "backgroundColor: 'var(--hud-bg-panel)'" not in panel
 
 
 def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
