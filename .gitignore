@@ -43,6 +43,7 @@ Desktop.ini
 # Claude Code
 CLAUDE.md
 ROADMAP.md
+.claude/
 
 # Build artifacts
 backend/static/assets/
