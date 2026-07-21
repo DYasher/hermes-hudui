@@ -452,7 +452,7 @@ function SkillItem({
         <div className="flex items-center gap-2 mb-0.5">
           <span className="font-bold" style={{ color: 'var(--hud-primary)' }}>{skill.name}</span>
           <span
-            className="text-[11px] px-1"
+            className="text-[10px] px-1 leading-4"
             style={{
               background: skill.enabled === false ? 'var(--hud-soft-block)' : 'var(--hud-primary)',
               color: skill.enabled === false ? 'var(--hud-warning)' : 'var(--hud-bg-deep)',
@@ -461,12 +461,12 @@ function SkillItem({
             {skill.enabled === false ? t('skills.disabled') : t('skills.enabled')}
           </span>
           {variant === 'recent' && (
-            <span className="text-[13px] px-1" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
+            <span className="text-[10px] px-1 leading-4" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
               {categoryDisplay.label}
             </span>
           )}
           {skill.is_custom && (
-            <span className="text-[13px] px-1" style={{ background: 'var(--hud-accent)', color: 'var(--hud-bg-deep)' }}>{t('dashboard.custom')}</span>
+            <span className="text-[10px] px-1 leading-4" style={{ background: 'var(--hud-accent)', color: 'var(--hud-bg-deep)' }}>{t('dashboard.custom')}</span>
           )}
           {variant === 'category' && (
             <span className="text-[13px] ml-auto" style={{ color: 'var(--hud-text-dim)' }}>
@@ -484,7 +484,7 @@ function SkillItem({
           }
         </div>
       </button>
-      <div data-skill-row-actions className="flex shrink-0 flex-wrap justify-end gap-1">
+      <div data-skill-row-actions className="flex shrink-0 flex-col items-stretch gap-1">
         <button
           type="button"
           onClick={() => onToggle(skill)}
@@ -1533,6 +1533,17 @@ export default function SkillsPanel() {
     setBatchDeleteConfirming(false)
   }
 
+  const allVisibleSelected = visibleSkills.length > 0
+    && visibleSkills.every(skill => selectedSkillPaths.includes(skill.path))
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      clearBatchSelection()
+      return
+    }
+    selectAllVisible()
+  }
+
   const handleBatchSetEnabled = async (enabled: boolean) => {
     if (!selectedSkills.length) return
     setBatchBusy(true)
@@ -1692,11 +1703,8 @@ export default function SkillsPanel() {
             )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{selectedCountLabel}</span>
-              <button type="button" onClick={selectAllVisible} disabled={!visibleSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
-                {t('skills.selectAllVisible')}
-              </button>
-              <button type="button" onClick={clearBatchSelection} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
-                {t('skills.clearSelection')}
+              <button type="button" onClick={toggleSelectAllVisible} disabled={!visibleSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
+                {allVisibleSelected ? t('skills.deselectAllVisible') : t('skills.selectAllVisible')}
               </button>
               <button type="button" onClick={() => handleBatchSetEnabled(true)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
                 {t('skills.batchEnable')}

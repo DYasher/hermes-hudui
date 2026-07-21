@@ -162,6 +162,8 @@ def test_skill_item_places_management_actions_on_right_side() -> None:
 
     assert "grid grid-cols-[auto_minmax(0,1fr)_auto]" in panel
     assert "data-skill-row-actions" in panel
+    assert 'className="flex shrink-0 flex-col items-stretch gap-1"' in panel
+    assert 'className="text-[10px] px-1 leading-4"' in panel
     assert "deleteConfirming" in panel
     assert "skills.confirmDeleteAction" in panel
     assert "mt-2 flex flex-wrap gap-1" not in panel
@@ -180,8 +182,11 @@ def test_skills_panel_supports_batch_operations_with_delete_confirmation() -> No
     assert "skills.batchDisable" in panel
     assert "skills.batchDelete" in panel
     assert "skills.batchConfirmDelete" in panel
+    assert "allVisibleSelected" in panel
+    assert "toggleSelectAllVisible" in panel
     assert "skills.selectAllVisible" in panel
-    assert "skills.clearSelection" in panel
+    assert "skills.deselectAllVisible" in panel
+    assert "t('skills.clearSelection')" not in panel
 
 
 def test_skills_panel_exposes_zip_import_and_market_install() -> None:
@@ -323,7 +328,7 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.batchConfirmDelete': 'Confirm batch delete'" in translations
     assert "'skills.selectedCount': '{count} selected'" in translations
     assert "'skills.selectAllVisible': 'Select visible'" in translations
-    assert "'skills.clearSelection': 'Clear'" in translations
+    assert "'skills.deselectAllVisible': 'Deselect visible'" in translations
     assert "'skills.importZip': 'Import ZIP'" in translations
     assert "'skills.skillMarket': 'Skill Market'" in translations
     assert "'skills.installSkill': 'Install'" in translations
@@ -373,7 +378,7 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.batchConfirmDelete': '确认批量删除'" in translations
     assert "'skills.selectedCount': '已选择 {count} 个'" in translations
     assert "'skills.selectAllVisible': '选择当前列表'" in translations
-    assert "'skills.clearSelection': '清空'" in translations
+    assert "'skills.deselectAllVisible': '取消当前列表'" in translations
     assert "'skills.importZip': '导入 ZIP'" in translations
     assert "'skills.skillMarket': '技能市场'" in translations
     assert "'skills.installSkill': '安装'" in translations
