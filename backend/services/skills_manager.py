@@ -18,7 +18,7 @@ from typing import Any
 import yaml
 
 from backend.cache import clear_cache
-from backend.collectors.skills import read_skill_detail
+from backend.collectors.skills import collect_skills, read_skill_detail
 from backend.collectors.utils import default_hermes_dir
 
 _SAFE_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -532,10 +532,52 @@ def _market_items_from_payload(payload: Any) -> list[dict[str, str]]:
     return [item for item in items if item is not None]
 
 
+def _installed_skills_index(
+    hermes_dir: str | None = None,
+) -> dict[str, dict[str, str]]:
+    index: dict[str, dict[str, str]] = {}
+    for skill in collect_skills(hermes_dir).skills:
+        installed = {
+            "category": skill.category,
+            "path": skill.path,
+        }
+        folder_name = Path(skill.path).parent.name
+        for name in {skill.name, folder_name}:
+            normalized = str(name or "").strip().casefold()
+            if normalized:
+                index.setdefault(normalized, installed)
+    return index
+
+
+def _mark_installed_market_items(
+    items: list[dict[str, str]],
+    hermes_dir: str | None = None,
+) -> list[dict[str, Any]]:
+    installed_index = _installed_skills_index(hermes_dir)
+    marked: list[dict[str, Any]] = []
+    for item in items:
+        identifier_name = item["identifier"].rstrip("/").rsplit("/", 1)[-1]
+        installed = None
+        for candidate in (item["name"], identifier_name):
+            installed = installed_index.get(candidate.strip().casefold())
+            if installed:
+                break
+        marked.append(
+            {
+                **item,
+                "installed": installed is not None,
+                "installed_category": installed["category"] if installed else "",
+                "installed_path": installed["path"] if installed else "",
+            }
+        )
+    return marked
+
+
 def search_skill_market(
     query: str,
     source: str = "official",
     limit: int = 20,
+    hermes_dir: str | None = None,
 ) -> dict[str, Any]:
     query = str(query or "").strip()
     if not query:
@@ -554,7 +596,10 @@ def search_skill_market(
         payload = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"invalid Hermes skills search JSON: {exc}") from None
-    items = _market_items_from_payload(payload)[:limit]
+    items = _mark_installed_market_items(
+        _market_items_from_payload(payload)[:limit],
+        hermes_dir,
+    )
     return {
         "query": query.strip(),
         "source": source,

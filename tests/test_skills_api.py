@@ -938,6 +938,60 @@ def test_skill_market_search_normalizes_hermes_cli_json(
     assert result["items"][0]["name"] == "debug-helper"
 
 
+def test_skill_market_search_marks_installed_skills(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    installed_skill = (
+        hermes_home / "skills" / "productivity" / "debug-helper" / "SKILL.md"
+    )
+    installed_skill.parent.mkdir(parents=True)
+    installed_skill.write_text(
+        "---\nname: Debug Helper\ndescription: Local copy\n---\n",
+        encoding="utf-8",
+    )
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "results": [
+                        {
+                            "identifier": "official/debug-helper",
+                            "name": "debug-helper",
+                        },
+                        {
+                            "identifier": "official/new-skill",
+                            "name": "new-skill",
+                        },
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(skills_manager.shutil, "which", lambda name: "/usr/bin/hermes")
+    monkeypatch.setattr(skills_manager.subprocess, "run", fake_run)
+
+    result = skills_manager.search_skill_market(
+        "skill",
+        source="official",
+        limit=5,
+    )
+    items = {item["name"]: item for item in result["items"]}
+
+    assert items["debug-helper"]["installed"] is True
+    assert items["debug-helper"]["installed_category"] == "productivity"
+    assert items["debug-helper"]["installed_path"] == str(installed_skill)
+    assert items["new-skill"]["installed"] is False
+    assert items["new-skill"]["installed_category"] == ""
+    assert items["new-skill"]["installed_path"] == ""
+
+
 def test_skill_market_install_runs_hermes_install_and_clears_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
