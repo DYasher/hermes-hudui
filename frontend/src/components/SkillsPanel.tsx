@@ -78,6 +78,11 @@ type SkillImportResult = {
 const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
 const TRANSLATION_MODEL_STORAGE_KEY = 'hud-skill-translation-model'
 
+const skillFilterOptionStyle = {
+  backgroundColor: 'var(--hud-bg-panel)',
+  color: 'var(--hud-text)',
+}
+
 const SKILL_CATEGORY_TRANSLATIONS = {
   apple: {
     labelKey: 'skills.category.apple.label',
@@ -1792,18 +1797,18 @@ export default function SkillsPanel() {
               />
               <label className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
                 <span>{t('skills.statusFilter')}</span>
-                <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
-                  <option value="all">{t('skills.allStatuses')}</option>
-                  <option value="enabled">{t('skills.enabled')}</option>
-                  <option value="disabled">{t('skills.disabled')}</option>
+                <select data-skill-filter-status value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)', colorScheme: 'dark' }}>
+                  <option value="all" style={skillFilterOptionStyle}>{t('skills.allStatuses')}</option>
+                  <option value="enabled" style={skillFilterOptionStyle}>{t('skills.enabled')}</option>
+                  <option value="disabled" style={skillFilterOptionStyle}>{t('skills.disabled')}</option>
                 </select>
               </label>
               <label className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
                 <span>{t('skills.typeFilter')}</span>
-                <select value={typeFilter} onChange={event => setTypeFilter(event.target.value as typeof typeFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
-                  <option value="all">{t('skills.allTypes')}</option>
-                  <option value="custom">{t('skills.customType')}</option>
-                  <option value="builtin">{t('skills.builtinType')}</option>
+                <select data-skill-filter-type value={typeFilter} onChange={event => setTypeFilter(event.target.value as typeof typeFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)', colorScheme: 'dark' }}>
+                  <option value="all" style={skillFilterOptionStyle}>{t('skills.allTypes')}</option>
+                  <option value="custom" style={skillFilterOptionStyle}>{t('skills.customType')}</option>
+                  <option value="builtin" style={skillFilterOptionStyle}>{t('skills.builtinType')}</option>
                 </select>
               </label>
             </div>

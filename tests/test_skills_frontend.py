@@ -227,6 +227,16 @@ def test_skills_panel_exposes_search_filters_and_backup_restore_actions() -> Non
     assert "skills.confirmRestore" in panel
 
 
+def test_skills_filter_options_use_theme_aware_native_dropdown_colors() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "skillFilterOptionStyle" in panel
+    assert "data-skill-filter-status" in panel
+    assert "data-skill-filter-type" in panel
+    assert "style={skillFilterOptionStyle}" in panel
+    assert "colorScheme: 'dark'" in panel
+
+
 def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
