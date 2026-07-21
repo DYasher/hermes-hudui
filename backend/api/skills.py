@@ -1,6 +1,6 @@
 """Skills endpoints."""
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
@@ -11,6 +11,7 @@ from backend.collectors.skills import (
     translate_skill_detail,
 )
 from backend.services.skills_manager import (
+    backup_skills_bytes,
     create_skill,
     delete_skill,
     import_skills_zip_bytes,
@@ -161,6 +162,18 @@ async def delete_skill_endpoint(request: SkillDeleteRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/skills/backup")
+async def backup_skills():
+    payload = await run_in_threadpool(backup_skills_bytes)
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="hermes-skills-backup.zip"'
+        },
+    )
 
 
 @router.post("/skills/import-zip")

@@ -207,6 +207,26 @@ def test_skills_panel_exposes_zip_import_and_market_install() -> None:
     assert "skills.installSkill" in panel
 
 
+def test_skills_panel_exposes_search_filters_and_backup_restore_actions() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "searchQuery" in panel
+    assert "statusFilter" in panel
+    assert "typeFilter" in panel
+    assert "filteredSkills" in panel
+    assert "skills.searchSkills" in panel
+    assert "skills.statusFilter" in panel
+    assert "skills.typeFilter" in panel
+    assert "downloadSkillsBackup" in panel
+    assert "fetch('/api/skills/backup')" in panel
+    assert "skills.backup" in panel
+    assert "mode?: 'import' | 'restore'" in panel
+    assert "mode === 'restore'" in panel
+    assert "skills.restoreSkills" in panel
+    assert "skills.previewRestore" in panel
+    assert "skills.confirmRestore" in panel
+
+
 def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 

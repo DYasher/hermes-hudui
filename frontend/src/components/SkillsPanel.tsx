@@ -33,6 +33,7 @@ type SkillInfo = {
 type SkillsPayload = {
   total: number
   custom_count: number
+  skills?: SkillInfo[]
   category_counts: Record<string, number>
   by_category: Record<string, SkillInfo[]>
   recently_modified: SkillInfo[]
@@ -265,6 +266,25 @@ async function importSkillsZip(file: File, overwrite: boolean, preview: boolean)
     body: file,
   })
   return readJsonResponse(res)
+}
+
+async function downloadSkillsBackup() {
+  const res = await fetch('/api/skills/backup')
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null)
+    const detail = payload?.detail || payload?.message || res.statusText
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'hermes-skills-backup.zip'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 async function searchSkillMarket(query: string, source: string) {
@@ -1135,13 +1155,16 @@ function SkillCreateModal({
 function SkillImportModal({
   onClose,
   onImported,
+  mode = 'import',
 }: {
   onClose: () => void
   onImported: () => void
+  mode?: 'import' | 'restore'
 }) {
   const { t } = useTranslation()
+  const isRestore = mode === 'restore'
   const [selectedZipFile, setSelectedZipFile] = useState<File | null>(null)
-  const [overwrite, setOverwrite] = useState(false)
+  const [overwrite, setOverwrite] = useState(isRestore)
   const [busy, setBusy] = useState<'preview' | 'import' | ''>('')
   const [error, setError] = useState('')
   const [previewResult, setPreviewResult] = useState<SkillImportPreview | null>(null)
@@ -1198,7 +1221,7 @@ function SkillImportModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
       <div className="w-full max-w-2xl max-h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
         <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
-          <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.importZip')}</div>
+          <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{isRestore ? t('skills.restoreSkills') : t('skills.importZip')}</div>
           <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
             x {t('skills.close')}
           </button>
@@ -1227,6 +1250,11 @@ function SkillImportModal({
             />
             {t('skills.overwriteExisting')}
           </label>
+          {isRestore && (
+            <div className="text-[12px]" style={{ color: 'var(--hud-warning)' }}>
+              {t('skills.restoreWarning')}
+            </div>
+          )}
           {error && <div className="text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
           {previewResult && (
             <div className="space-y-2">
@@ -1269,10 +1297,10 @@ function SkillImportModal({
         <div className="shrink-0 px-4 py-3 border-t flex justify-end gap-2" style={{ borderColor: 'var(--hud-border)' }}>
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-[12px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>{t('memory.cancel')}</button>
           <button type="button" onClick={previewImport} disabled={Boolean(busy) || !selectedZipFile} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
-            {busy === 'preview' ? '...' : t('skills.previewImport')}
+            {busy === 'preview' ? '...' : isRestore ? t('skills.previewRestore') : t('skills.previewImport')}
           </button>
           <button type="button" onClick={submit} disabled={Boolean(busy) || !selectedZipFile || !previewResult} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
-            {busy === 'import' ? '...' : t('skills.confirmImport')}
+            {busy === 'import' ? '...' : isRestore ? t('skills.confirmRestore') : t('skills.confirmImport')}
           </button>
         </div>
       </div>
@@ -1435,17 +1463,34 @@ export default function SkillsPanel() {
   const [selectedSkillPath, setSelectedSkillPath] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
   const [marketOpen, setMarketOpen] = useState(false)
   const [busySkillPath, setBusySkillPath] = useState('')
+  const [backupBusy, setBackupBusy] = useState(false)
   const [batchBusy, setBatchBusy] = useState(false)
   const [batchDeleteConfirming, setBatchDeleteConfirming] = useState(false)
   const [confirmDeletePath, setConfirmDeletePath] = useState('')
   const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([])
   const [operationError, setOperationError] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'custom' | 'builtin'>('all')
 
   const refreshSkills = useCallback(async () => {
     await mutate()
   }, [mutate])
+
+  const handleBackup = async () => {
+    setBackupBusy(true)
+    setOperationError('')
+    try {
+      await downloadSkillsBackup()
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
 
   const handleToggleSkill = async (skill: SkillInfo) => {
     setBusySkillPath(skill.path)
@@ -1516,6 +1561,7 @@ export default function SkillsPanel() {
   const catCounts: Record<string, number> = data?.category_counts || {}
   const byCategory: Record<string, SkillInfo[]> = data?.by_category || {}
   const recentlyMod = data?.recently_modified || []
+  const allSkills = data?.skills || Object.values(byCategory).flat()
 
   // Sort categories by count descending
   const sorted = Object.entries(catCounts).sort((a: any, b: any) => b[1] - a[1])
@@ -1523,7 +1569,28 @@ export default function SkillsPanel() {
 
   // Skills in selected category
   const catSkills = selectedCat ? byCategory[selectedCat] || [] : []
-  const visibleSkills = selectedCat ? catSkills : recentlyMod
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const filteredSkills = allSkills.filter(skill => {
+    if (selectedCat && skill.category !== selectedCat) return false
+    if (statusFilter === 'enabled' && skill.enabled === false) return false
+    if (statusFilter === 'disabled' && skill.enabled !== false) return false
+    if (typeFilter === 'custom' && !skill.is_custom) return false
+    if (typeFilter === 'builtin' && skill.is_custom) return false
+    if (!normalizedSearch) return true
+    const categoryDisplay = getSkillCategoryDisplay(skill.category || '', t)
+    const searchable = [
+      skill.name,
+      skill.description,
+      skill.category,
+      categoryDisplay.label,
+      categoryDisplay.description,
+    ].join(' ').toLowerCase()
+    return searchable.includes(normalizedSearch)
+  })
+  const hasListFilters = Boolean(normalizedSearch)
+    || statusFilter !== 'all'
+    || typeFilter !== 'all'
+  const visibleSkills = selectedCat || hasListFilters ? filteredSkills : recentlyMod
   const selectedSkills = visibleSkills.filter(skill => selectedSkillPaths.includes(skill.path))
   const selectedCategoryDisplay = selectedCat ? getSkillCategoryDisplay(selectedCat, t) : null
   const selectedCountLabel = t('skills.selectedCount').replace('{count}', String(selectedSkills.length))
@@ -1613,6 +1680,13 @@ export default function SkillsPanel() {
           onImported={refreshSkills}
         />
       )}
+      {restoreOpen && (
+        <SkillImportModal
+          mode="restore"
+          onClose={() => setRestoreOpen(false)}
+          onImported={refreshSkills}
+        />
+      )}
       {marketOpen && (
         <SkillMarketModal
           onClose={() => setMarketOpen(false)}
@@ -1640,6 +1714,12 @@ export default function SkillsPanel() {
               </button>
               <button type="button" onClick={() => setImportOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
                 {t('skills.importZip')}
+              </button>
+              <button type="button" onClick={() => setRestoreOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.restoreSkills')}
+              </button>
+              <button type="button" onClick={handleBackup} disabled={backupBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
+                {backupBusy ? '...' : t('skills.backup')}
               </button>
               <button type="button" onClick={() => setMarketOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
                 {t('skills.skillMarket')}
@@ -1701,6 +1781,32 @@ export default function SkillsPanel() {
             ) : (
               <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.selectPrompt')}</div>
             )}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
+              <input
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                placeholder={t('skills.searchSkillsPlaceholder')}
+                aria-label={t('skills.searchSkills')}
+                className="min-w-0 px-2 py-1.5 text-[12px] outline-none"
+                style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+              />
+              <label className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+                <span>{t('skills.statusFilter')}</span>
+                <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
+                  <option value="all">{t('skills.allStatuses')}</option>
+                  <option value="enabled">{t('skills.enabled')}</option>
+                  <option value="disabled">{t('skills.disabled')}</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1 text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>
+                <span>{t('skills.typeFilter')}</span>
+                <select value={typeFilter} onChange={event => setTypeFilter(event.target.value as typeof typeFilter)} className="px-1.5 py-1 outline-none" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
+                  <option value="all">{t('skills.allTypes')}</option>
+                  <option value="custom">{t('skills.customType')}</option>
+                  <option value="builtin">{t('skills.builtinType')}</option>
+                </select>
+              </label>
+            </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-[12px]" style={{ color: 'var(--hud-text-dim)' }}>{selectedCountLabel}</span>
               <button type="button" onClick={toggleSelectAllVisible} disabled={!visibleSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
@@ -1734,6 +1840,9 @@ export default function SkillsPanel() {
                 />
               </div>
             ))}
+            {visibleSkills.length === 0 && hasListFilters && (
+              <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.noMatches')}</div>
+            )}
             {selectedCat && catSkills.length === 0 && (
               <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('dashboard.noSkillsInCategory')}</div>
             )}

@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path
@@ -46,6 +47,7 @@ def test_skill_management_routes_are_registered(registered_routes) -> None:
     assert ("PUT", "/api/skills/detail") in registered_routes
     assert ("POST", "/api/skills/toggle") in registered_routes
     assert ("DELETE", "/api/skills") in registered_routes
+    assert ("GET", "/api/skills/backup") in registered_routes
     assert ("POST", "/api/skills/import-zip") in registered_routes
     assert ("GET", "/api/skills/market/search") in registered_routes
     assert ("POST", "/api/skills/market/install") in registered_routes
@@ -843,6 +845,85 @@ def test_import_skills_zip_overwrites_only_after_preview(
     backups = list(backup_root.rglob("SKILL.md"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == "# Existing\n"
+
+
+def test_backup_skills_bytes_preserves_skill_files_without_writing_hermes_home(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill_dir = hermes_home / "skills" / "productivity" / "backup-helper"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Backup helper\n", encoding="utf-8")
+    (skill_dir / "references").mkdir()
+    (skill_dir / "references" / "notes.md").write_text("notes", encoding="utf-8")
+    symlink = skill_dir / "references" / "outside.md"
+    try:
+        symlink.symlink_to(hermes_home / "outside.md")
+    except OSError:
+        symlink = None
+
+    payload = skills_manager.backup_skills_bytes()
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = set(archive.namelist())
+        assert "hermes-skills-backup/skills/productivity/backup-helper/SKILL.md" in names
+        assert (
+            archive.read(
+                "hermes-skills-backup/skills/productivity/backup-helper/references/notes.md"
+            )
+            == b"notes"
+        )
+        if symlink is not None:
+            assert (
+                "hermes-skills-backup/skills/productivity/backup-helper/references/outside.md"
+                not in names
+            )
+
+    assert not list(hermes_home.glob("*.zip"))
+
+
+def test_backup_zip_can_be_previewed_and_restored_with_existing_import_flow(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill_md = hermes_home / "skills" / "research" / "restore-helper" / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text("# Restore helper\n", encoding="utf-8")
+    nested_skill = skill_md.parent / "selves" / "nested-helper" / "SKILL.md"
+    nested_skill.parent.mkdir(parents=True)
+    nested_skill.write_text("# Nested helper\n", encoding="utf-8")
+
+    backup = skills_manager.backup_skills_bytes()
+    with zipfile.ZipFile(io.BytesIO(backup)) as archive:
+        names = archive.namelist()
+        assert len([name for name in names if name.endswith("/SKILL.md")]) == 2
+        assert len(names) == len(set(names))
+    skill_md.unlink()
+    shutil.rmtree(skill_md.parent)
+
+    preview = skills_manager.preview_skills_zip_bytes(
+        backup,
+        filename="hermes-skills-backup.zip",
+        overwrite=True,
+    )
+    assert preview["add_count"] == 2
+    assert {(item["category"], item["name"]) for item in preview["items"]} == {
+        ("research", "restore-helper"),
+        ("research", "nested-helper"),
+    }
+
+    result = skills_manager.import_skills_zip_bytes(
+        backup,
+        filename="hermes-skills-backup.zip",
+        overwrite=True,
+    )
+    assert result["installed_count"] == 2
+    assert skill_md.read_text(encoding="utf-8") == "# Restore helper\n"
+    assert (
+        hermes_home / "skills" / "research" / "nested-helper" / "SKILL.md"
+    ).read_text(encoding="utf-8") == "# Nested helper\n"
 
 
 def test_preview_skills_zip_api_dispatches_without_importing(

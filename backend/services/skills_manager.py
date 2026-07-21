@@ -263,6 +263,87 @@ def delete_skill(path: str, hermes_dir: str | None = None) -> dict[str, Any]:
     }
 
 
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _path_contains_symlink(path: Path, root: Path) -> bool:
+    """Reject a skill file whose directory tree escapes through a symlink."""
+    try:
+        relative_parts = path.relative_to(root).parts
+    except ValueError:
+        return True
+    current = root
+    for part in relative_parts:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def backup_skills_bytes(hermes_dir: str | None = None) -> bytes:
+    """Create an in-memory ZIP of the indexed Skills without touching Hermes home."""
+    skills_dir = _skills_dir(hermes_dir).resolve()
+    archive_entries: list[tuple[Path, str]] = []
+    seen_roots: set[Path] = set()
+    skill_roots: list[tuple[Path, Path]] = []
+
+    for skill in collect_skills(hermes_dir).skills:
+        skill_path = Path(skill.path)
+        if _path_contains_symlink(skill_path, skills_dir) or not skill_path.is_file():
+            continue
+        skill_root = skill_path.parent
+        if skill_root in seen_roots:
+            continue
+        seen_roots.add(skill_root)
+        skill_roots.append((skill_path, skill_root))
+
+    for skill_path, skill_root in skill_roots:
+        relative_root = skill_root.relative_to(skills_dir)
+        if len(relative_root.parts) == 1:
+            category, name = "uncategorized", relative_root.parts[0]
+        else:
+            category, name = relative_root.parts[0], relative_root.parts[-1]
+        archive_root = PurePosixPath(
+            "hermes-skills-backup", "skills", category, name
+        )
+        nested_roots = [
+            other_root
+            for _, other_root in skill_roots
+            if other_root != skill_root
+            and _path_is_under(other_root, skill_root)
+        ]
+
+        for root, dirs, files in os.walk(skill_root, followlinks=False):
+            root_path = Path(root)
+            dirs[:] = sorted(
+                dirname
+                for dirname in dirs
+                if not (root_path / dirname).is_symlink()
+                and not any(
+                    _path_is_under(nested_root, root_path / dirname)
+                    for nested_root in nested_roots
+                )
+            )
+            for filename in sorted(files):
+                file_path = root_path / filename
+                if file_path.is_symlink() or not file_path.is_file():
+                    continue
+                relative_file = file_path.relative_to(skill_root)
+                archive_path = (archive_root / PurePosixPath(*relative_file.parts)).as_posix()
+                archive_entries.append((file_path, archive_path))
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_path, archive_path in sorted(archive_entries, key=lambda item: item[1]):
+            archive.write(file_path, arcname=archive_path)
+    return output.getvalue()
+
+
 def _zip_member_parts(name: str) -> tuple[str, ...]:
     pure = PurePosixPath(name)
     if pure.is_absolute():
