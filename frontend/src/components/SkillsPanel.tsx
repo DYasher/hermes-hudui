@@ -48,6 +48,24 @@ type SkillMarketItem = {
   category?: string
   version?: string
 }
+type SkillImportItem = {
+  name: string
+  category: string
+  status: 'add' | 'overwrite' | 'skip' | 'installed' | 'overwritten' | 'skipped'
+}
+type SkillImportPreview = {
+  preview: true
+  filename: string
+  add_count: number
+  overwrite_count: number
+  skip_count: number
+  items: SkillImportItem[]
+}
+type SkillImportResult = {
+  filename: string
+  installed_count: number
+  items: SkillImportItem[]
+}
 
 const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
 const TRANSLATION_MODEL_STORAGE_KEY = 'hud-skill-translation-model'
@@ -228,10 +246,11 @@ async function toggleSkillEnabled(name: string, enabled: boolean) {
   return readJsonResponse(res)
 }
 
-async function importSkillsZip(file: File, overwrite: boolean) {
+async function importSkillsZip(file: File, overwrite: boolean, preview: boolean) {
   const params = new URLSearchParams({
     filename: file.name,
     overwrite: String(overwrite),
+    preview: String(preview),
   })
   const res = await fetch(`/api/skills/import-zip?${params.toString()}`, {
     method: 'POST',
@@ -1116,23 +1135,56 @@ function SkillImportModal({
   const { t } = useTranslation()
   const [selectedZipFile, setSelectedZipFile] = useState<File | null>(null)
   const [overwrite, setOverwrite] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<'preview' | 'import' | ''>('')
   const [error, setError] = useState('')
-  const [result, setResult] = useState<any>(null)
+  const [previewResult, setPreviewResult] = useState<SkillImportPreview | null>(null)
+  const [result, setResult] = useState<SkillImportResult | null>(null)
+
+  const resetPreview = () => {
+    setPreviewResult(null)
+    setResult(null)
+    setError('')
+  }
+
+  const previewImport = async () => {
+    if (!selectedZipFile) return
+    setBusy('preview')
+    setError('')
+    setResult(null)
+    try {
+      const payload = await importSkillsZip(selectedZipFile, overwrite, true)
+      setPreviewResult(payload)
+    } catch (err) {
+      setPreviewResult(null)
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
 
   const submit = async () => {
-    if (!selectedZipFile) return
-    setBusy(true)
+    if (!selectedZipFile || !previewResult) return
+    setBusy('import')
     setError('')
     try {
-      const payload = await importSkillsZip(selectedZipFile, overwrite)
+      const payload = await importSkillsZip(selectedZipFile, overwrite, false)
       setResult(payload)
+      setPreviewResult(null)
       onImported()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setBusy(false)
+      setBusy('')
     }
+  }
+
+  const importStatusLabel = (status: SkillImportItem['status']) => {
+    if (status === 'add') return t('skills.importWillAdd')
+    if (status === 'overwrite') return t('skills.importWillOverwrite')
+    if (status === 'skip') return t('skills.importWillSkip')
+    if (status === 'overwritten') return t('skills.importOverwritten')
+    if (status === 'skipped') return t('skills.importSkipped')
+    return t('skills.importInstalled')
   }
 
   return (
@@ -1148,20 +1200,59 @@ function SkillImportModal({
           <input
             type="file"
             accept=".zip,application/zip"
-            onChange={event => setSelectedZipFile(event.target.files?.[0] || null)}
+            disabled={Boolean(busy)}
+            onChange={event => {
+              setSelectedZipFile(event.target.files?.[0] || null)
+              resetPreview()
+            }}
             className="w-full text-[13px]"
             style={{ color: 'var(--hud-text)' }}
           />
           <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>
-            <input type="checkbox" checked={overwrite} onChange={event => setOverwrite(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={overwrite}
+              disabled={Boolean(busy)}
+              onChange={event => {
+                setOverwrite(event.target.checked)
+                resetPreview()
+              }}
+            />
             {t('skills.overwriteExisting')}
           </label>
           {error && <div className="text-[12px]" style={{ color: 'var(--hud-error)' }}>{error}</div>}
+          {previewResult && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2 text-[12px]">
+                <div className="px-2 py-1.5 border" style={{ borderColor: 'var(--hud-border)', color: 'var(--hud-primary)' }}>
+                  {t('skills.importWillAdd')}: {previewResult.add_count}
+                </div>
+                <div className="px-2 py-1.5 border" style={{ borderColor: 'var(--hud-border)', color: 'var(--hud-warning)' }}>
+                  {t('skills.importWillOverwrite')}: {previewResult.overwrite_count}
+                </div>
+                <div className="px-2 py-1.5 border" style={{ borderColor: 'var(--hud-border)', color: 'var(--hud-text-dim)' }}>
+                  {t('skills.importWillSkip')}: {previewResult.skip_count}
+                </div>
+              </div>
+              <div className="space-y-1">
+                {previewResult.items.map(item => (
+                  <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
+                    <span style={{ color: item.status === 'add' ? 'var(--hud-primary)' : item.status === 'overwrite' ? 'var(--hud-warning)' : 'var(--hud-text-dim)' }}>
+                      {importStatusLabel(item.status)}
+                    </span>
+                    {' '} {item.category}/{item.name}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {result?.items && (
             <div className="space-y-1">
-              {result.items.map((item: any) => (
+              {result.items.map(item => (
                 <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
-                  <span style={{ color: item.status === 'installed' ? 'var(--hud-primary)' : 'var(--hud-warning)' }}>{item.status}</span>
+                  <span style={{ color: item.status === 'installed' ? 'var(--hud-primary)' : item.status === 'overwritten' ? 'var(--hud-warning)' : 'var(--hud-text-dim)' }}>
+                    {importStatusLabel(item.status)}
+                  </span>
                   {' '} {item.category}/{item.name}
                 </div>
               ))}
@@ -1170,8 +1261,11 @@ function SkillImportModal({
         </div>
         <div className="shrink-0 px-4 py-3 border-t flex justify-end gap-2" style={{ borderColor: 'var(--hud-border)' }}>
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-[12px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>{t('memory.cancel')}</button>
-          <button type="button" onClick={submit} disabled={busy || !selectedZipFile} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
-            {busy ? '...' : t('skills.importZip')}
+          <button type="button" onClick={previewImport} disabled={Boolean(busy) || !selectedZipFile} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+            {busy === 'preview' ? '...' : t('skills.previewImport')}
+          </button>
+          <button type="button" onClick={submit} disabled={Boolean(busy) || !selectedZipFile || !previewResult} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+            {busy === 'import' ? '...' : t('skills.confirmImport')}
           </button>
         </div>
       </div>
