@@ -48,6 +48,7 @@ def test_skill_management_routes_are_registered(registered_routes) -> None:
     assert ("POST", "/api/skills/toggle") in registered_routes
     assert ("DELETE", "/api/skills") in registered_routes
     assert ("GET", "/api/skills/backup") in registered_routes
+    assert ("POST", "/api/skills/export") in registered_routes
     assert ("POST", "/api/skills/import-zip") in registered_routes
     assert ("GET", "/api/skills/market/search") in registered_routes
     assert ("POST", "/api/skills/market/install") in registered_routes
@@ -883,6 +884,32 @@ def test_backup_skills_bytes_preserves_skill_files_without_writing_hermes_home(
     assert not list(hermes_home.glob("*.zip"))
 
 
+def test_backup_skills_bytes_supports_symlinked_hermes_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    real_home = tmp_path / "real-hermes-home"
+    real_home.mkdir()
+    linked_home = tmp_path / "linked-hermes-home"
+    linked_home.symlink_to(real_home, target_is_directory=True)
+    monkeypatch.setenv("HERMES_HOME", str(linked_home))
+    clear_cache()
+
+    skill = linked_home / "skills" / "research" / "linked-helper" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Linked helper\n", encoding="utf-8")
+
+    payload = skills_manager.backup_skills_bytes()
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert (
+            "hermes-skills-backup/skills/research/linked-helper/SKILL.md"
+            in archive.namelist()
+        )
+
+
 def test_backup_zip_can_be_previewed_and_restored_with_existing_import_flow(
     hermes_home: Path,
 ) -> None:
@@ -924,6 +951,190 @@ def test_backup_zip_can_be_previewed_and_restored_with_existing_import_flow(
     assert (
         hermes_home / "skills" / "research" / "nested-helper" / "SKILL.md"
     ).read_text(encoding="utf-8") == "# Nested helper\n"
+
+
+def test_export_skills_bytes_includes_only_selected_skills_and_support_files(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    selected = hermes_home / "skills" / "research" / "export-helper" / "SKILL.md"
+    selected.parent.mkdir(parents=True)
+    selected.write_text("# Export helper\n", encoding="utf-8")
+    references = selected.parent / "references"
+    references.mkdir()
+    (references / "notes.md").write_text("notes", encoding="utf-8")
+    (references / "SKILL.md").write_text("# Reference format\n", encoding="utf-8")
+
+    nested = selected.parent / "selves" / "nested-helper" / "SKILL.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("# Nested helper\n", encoding="utf-8")
+
+    unselected = hermes_home / "skills" / "research" / "other-helper" / "SKILL.md"
+    unselected.parent.mkdir(parents=True)
+    unselected.write_text("# Other helper\n", encoding="utf-8")
+
+    payload = skills_manager.export_skills_bytes([str(selected), str(selected)])
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = archive.namelist()
+        assert names.count(
+            "hermes-skills-backup/skills/research/export-helper/SKILL.md"
+        ) == 1
+        assert archive.read(
+            "hermes-skills-backup/skills/research/export-helper/references/notes.md"
+        ) == b"notes"
+        assert archive.read(
+            "hermes-skills-backup/skills/research/export-helper/references/SKILL.md"
+        ) == b"# Reference format\n"
+        assert not any("other-helper" in name for name in names)
+        assert not any("nested-helper" in name for name in names)
+        assert len(names) == len(set(names))
+
+    preview = skills_manager.preview_skills_zip_bytes(
+        payload,
+        filename="hermes-skills-export.zip",
+    )
+    assert len(preview["items"]) == 1
+    assert preview["items"][0]["name"] == "export-helper"
+
+
+def test_export_skills_bytes_rejects_empty_or_outside_paths(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    outside = hermes_home / "outside" / "SKILL.md"
+    outside.parent.mkdir(parents=True)
+    outside.write_text("# Outside\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="at least one skill"):
+        skills_manager.export_skills_bytes([])
+
+    with pytest.raises(ValueError, match="outside the Hermes skills directory"):
+        skills_manager.export_skills_bytes([str(outside)])
+
+
+def test_export_skills_bytes_rejects_symlinked_skills_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+    outside_skills = tmp_path / "outside-skills"
+    skill = outside_skills / "research" / "secret" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Secret\n", encoding="utf-8")
+    (hermes_home / "skills").symlink_to(outside_skills, target_is_directory=True)
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    clear_cache()
+
+    with pytest.raises(ValueError, match="no exportable skills"):
+        skills_manager.export_skills_bytes([str(skill)])
+
+
+def test_export_skills_bytes_excludes_filtered_nested_skill(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    parent = hermes_home / "skills" / "research" / "parent" / "SKILL.md"
+    parent.parent.mkdir(parents=True)
+    parent.write_text("# Parent\n", encoding="utf-8")
+    nested = parent.parent / "selves" / "filtered" / "SKILL.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text(
+        "---\nname: filtered\nplatforms: [never-current-platform]\n---\n# Filtered\n",
+        encoding="utf-8",
+    )
+
+    payload = skills_manager.export_skills_bytes([str(parent)])
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = archive.namelist()
+        assert any(name.endswith("parent/SKILL.md") for name in names)
+        assert not any("filtered" in name for name in names)
+
+
+def test_export_skills_bytes_disambiguates_conflicting_archive_paths(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    first = hermes_home / "skills" / "research" / "group-a" / "same" / "SKILL.md"
+    second = hermes_home / "skills" / "research" / "group-b" / "same" / "SKILL.md"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    first.write_text("---\nname: first-same\n---\n# First\n", encoding="utf-8")
+    second.write_text("---\nname: second-same\n---\n# Second\n", encoding="utf-8")
+
+    payload = skills_manager.export_skills_bytes([str(first), str(second)])
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        skill_entries = [
+            name for name in archive.namelist() if name.endswith("/SKILL.md")
+        ]
+        assert len(skill_entries) == 2
+        assert len(skill_entries) == len(set(skill_entries))
+
+    preview = skills_manager.preview_skills_zip_bytes(
+        payload,
+        filename="hermes-skills-export.zip",
+    )
+    assert preview["add_count"] == 2
+    assert len({item["path"] for item in preview["items"]}) == 2
+
+
+def test_read_archive_file_does_not_hide_read_errors(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    skill = hermes_home / "skills" / "research" / "read-error" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Read error\n", encoding="utf-8")
+    skills_dir = (hermes_home / "skills").resolve()
+    real_open = os.open
+
+    def fail_open(path, *args, **kwargs):
+        if Path(path) == skills_dir:
+            raise PermissionError("permission denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(skills_manager.os, "open", fail_open)
+    monkeypatch.setattr(skills_manager.os, "supports_dir_fd", {fail_open})
+
+    with pytest.raises(PermissionError, match="permission denied"):
+        skills_manager._read_archive_file(skill, skills_dir)
+
+
+def test_export_skills_api_returns_downloadable_zip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_export(paths):
+        captured["paths"] = paths
+        return b"zip payload"
+
+    async def direct_run(func, *args):
+        return func(*args)
+
+    monkeypatch.setattr(skills_api, "export_skills_bytes", fake_export)
+    monkeypatch.setattr(skills_api, "run_in_threadpool", direct_run)
+
+    request = skills_api.SkillExportRequest(paths=["/skills/one/SKILL.md"])
+    response = asyncio.run(skills_api.export_skills(request))
+
+    assert response.body == b"zip payload"
+    assert response.media_type == "application/zip"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="hermes-skills-export.zip"'
+    )
+    assert captured["paths"] == ["/skills/one/SKILL.md"]
 
 
 def test_preview_skills_zip_api_dispatches_without_importing(

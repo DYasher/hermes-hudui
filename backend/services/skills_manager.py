@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+import hashlib
 import io
 import json
 import os
@@ -35,6 +37,23 @@ _MARKET_SOURCES = {
 _MAX_ZIP_BYTES = 100 * 1024 * 1024
 _MAX_ZIP_FILES = 1000
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+_SKILL_SCAN_EXCLUDED_DIRS = {
+    ".git",
+    ".github",
+    ".hub",
+    ".archive",
+    ".venv",
+    "venv",
+    "node_modules",
+    "site-packages",
+    "__pycache__",
+    ".tox",
+    ".nox",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+}
+_SKILL_SUPPORT_DIRS = {"references", "templates", "assets", "scripts"}
 
 
 def _hermes_path(hermes_dir: str | None = None) -> Path:
@@ -43,6 +62,10 @@ def _hermes_path(hermes_dir: str | None = None) -> Path:
 
 def _skills_dir(hermes_dir: str | None = None) -> Path:
     return _hermes_path(hermes_dir) / "skills"
+
+
+def _source_skills_dir(hermes_dir: str | None = None) -> Path:
+    return Path(default_hermes_dir(hermes_dir)).expanduser().absolute() / "skills"
 
 
 def _cache_base() -> Path:
@@ -273,6 +296,8 @@ def _path_is_under(path: Path, root: Path) -> bool:
 
 def _path_contains_symlink(path: Path, root: Path) -> bool:
     """Reject a skill file whose directory tree escapes through a symlink."""
+    if root.is_symlink():
+        return True
     try:
         relative_parts = path.relative_to(root).parts
     except ValueError:
@@ -285,63 +310,245 @@ def _path_contains_symlink(path: Path, root: Path) -> bool:
     return False
 
 
-def backup_skills_bytes(hermes_dir: str | None = None) -> bytes:
-    """Create an in-memory ZIP of the indexed Skills without touching Hermes home."""
-    skills_dir = _skills_dir(hermes_dir).resolve()
-    archive_entries: list[tuple[Path, str]] = []
+def _indexed_skill_roots(
+    skills_dir: Path,
+    hermes_dir: str | None = None,
+) -> list[Path]:
+    source_skills_dir = _source_skills_dir(hermes_dir)
     seen_roots: set[Path] = set()
-    skill_roots: list[tuple[Path, Path]] = []
+    skill_roots: list[Path] = []
 
     for skill in collect_skills(hermes_dir).skills:
-        skill_path = Path(skill.path)
-        if _path_contains_symlink(skill_path, skills_dir) or not skill_path.is_file():
+        source_path = Path(skill.path).expanduser().absolute()
+        if _path_contains_symlink(source_path, source_skills_dir):
+            continue
+        skill_path = source_path.resolve()
+        if not _path_is_under(skill_path, skills_dir) or not skill_path.is_file():
             continue
         skill_root = skill_path.parent
         if skill_root in seen_roots:
             continue
         seen_roots.add(skill_root)
-        skill_roots.append((skill_path, skill_root))
+        skill_roots.append(skill_root)
 
-    for skill_path, skill_root in skill_roots:
+    return skill_roots
+
+
+def _discover_skill_roots(skills_dir: Path) -> list[Path]:
+    """Find every non-symlink Skill root, including filtered nested Skills."""
+    skill_roots: list[Path] = []
+    if not skills_dir.is_dir():
+        return skill_roots
+
+    for root, dirs, files in os.walk(skills_dir, followlinks=False):
+        root_path = Path(root)
+        has_skill_md = "SKILL.md" in files
+        dirs[:] = sorted(
+            dirname
+            for dirname in dirs
+            if dirname not in _SKILL_SCAN_EXCLUDED_DIRS
+            and not (root_path / dirname).is_symlink()
+            and not (has_skill_md and dirname in _SKILL_SUPPORT_DIRS)
+        )
+        skill_path = root_path / "SKILL.md"
+        if (
+            has_skill_md
+            and not skill_path.is_symlink()
+            and skill_path.is_file()
+        ):
+            skill_roots.append(root_path.resolve())
+
+    return skill_roots
+
+
+def _archive_roots_for_skills(
+    skill_roots: list[Path],
+    skills_dir: Path,
+) -> dict[Path, PurePosixPath]:
+    locations: dict[Path, tuple[str, str, Path]] = {}
+    reserved: set[tuple[str, str]] = set()
+    for skill_root in skill_roots:
         relative_root = skill_root.relative_to(skills_dir)
         if len(relative_root.parts) == 1:
             category, name = "uncategorized", relative_root.parts[0]
         else:
             category, name = relative_root.parts[0], relative_root.parts[-1]
-        archive_root = PurePosixPath(
-            "hermes-skills-backup", "skills", category, name
-        )
-        nested_roots = [
-            other_root
-            for _, other_root in skill_roots
-            if other_root != skill_root
-            and _path_is_under(other_root, skill_root)
-        ]
+        locations[skill_root] = (category, name, relative_root)
+        reserved.add((category, name))
 
-        for root, dirs, files in os.walk(skill_root, followlinks=False):
-            root_path = Path(root)
-            dirs[:] = sorted(
-                dirname
-                for dirname in dirs
-                if not (root_path / dirname).is_symlink()
-                and not any(
-                    _path_is_under(nested_root, root_path / dirname)
-                    for nested_root in nested_roots
-                )
+    archive_roots: dict[Path, PurePosixPath] = {}
+    used: set[tuple[str, str]] = set()
+    sorted_roots = sorted(
+        skill_roots,
+        key=lambda item: str(item.relative_to(skills_dir)),
+    )
+    for skill_root in sorted_roots:
+        category, preferred_name, relative_root = locations[skill_root]
+        archive_name = preferred_name
+        if (category, archive_name) in used:
+            for attempt in range(100):
+                digest = hashlib.sha256(
+                    f"{relative_root.as_posix()}:{attempt}".encode("utf-8")
+                ).hexdigest()[:8]
+                archive_name = f"{preferred_name[:71]}-{digest}"
+                if (
+                    (category, archive_name) not in used
+                    and (category, archive_name) not in reserved
+                ):
+                    break
+            else:
+                raise ValueError("could not create a unique skill archive path")
+
+        used.add((category, archive_name))
+        archive_roots[skill_root] = PurePosixPath(
+            "hermes-skills-backup", "skills", category, archive_name
+        )
+
+    return archive_roots
+
+
+def _read_archive_file(file_path: Path, skills_dir: Path) -> bytes | None:
+    """Read a regular file without following symlinks inside the Skills tree."""
+    try:
+        relative = file_path.relative_to(skills_dir)
+    except ValueError:
+        return None
+    if not relative.parts:
+        return None
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow and os.open in os.supports_dir_fd:
+        directory_fds: list[int] = []
+        file_fd: int | None = None
+        try:
+            current_fd = os.open(
+                skills_dir,
+                os.O_RDONLY | directory | nofollow,
             )
-            for filename in sorted(files):
-                file_path = root_path / filename
-                if file_path.is_symlink() or not file_path.is_file():
-                    continue
-                relative_file = file_path.relative_to(skill_root)
-                archive_path = (archive_root / PurePosixPath(*relative_file.parts)).as_posix()
-                archive_entries.append((file_path, archive_path))
+            directory_fds.append(current_fd)
+            for part in relative.parts[:-1]:
+                current_fd = os.open(
+                    part,
+                    os.O_RDONLY | directory | nofollow,
+                    dir_fd=current_fd,
+                )
+                directory_fds.append(current_fd)
+
+            file_fd = os.open(
+                relative.parts[-1],
+                os.O_RDONLY | nofollow,
+                dir_fd=current_fd,
+            )
+            if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+                return None
+            with os.fdopen(file_fd, "rb") as handle:
+                file_fd = None
+                return handle.read()
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.ELOOP:
+                return None
+            raise
+        finally:
+            if file_fd is not None:
+                os.close(file_fd)
+            for directory_fd in reversed(directory_fds):
+                os.close(directory_fd)
+
+    try:
+        resolved = file_path.resolve(strict=True)
+        if file_path.is_symlink() or not _path_is_under(resolved, skills_dir):
+            return None
+        with file_path.open("rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            return handle.read()
+    except OSError:
+        raise
+
+
+def _build_skills_zip(
+    skill_roots: list[Path],
+    indexed_roots: list[Path],
+    skills_dir: Path,
+) -> bytes:
+    archive_entries: set[str] = set()
+    archive_roots = _archive_roots_for_skills(skill_roots, skills_dir)
 
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for file_path, archive_path in sorted(archive_entries, key=lambda item: item[1]):
-            archive.write(file_path, arcname=archive_path)
+        for skill_root in skill_roots:
+            archive_root = archive_roots[skill_root]
+            nested_roots = [
+                other_root
+                for other_root in indexed_roots
+                if other_root != skill_root
+                and _path_is_under(other_root, skill_root)
+            ]
+
+            for root, dirs, files in os.walk(skill_root, followlinks=False):
+                root_path = Path(root)
+                dirs[:] = sorted(
+                    dirname
+                    for dirname in dirs
+                    if not (root_path / dirname).is_symlink()
+                    and (root_path / dirname).resolve() not in nested_roots
+                )
+                for filename in sorted(files):
+                    file_path = root_path / filename
+                    if file_path.is_symlink() or not file_path.is_file():
+                        continue
+                    relative_file = file_path.relative_to(skill_root)
+                    archive_path = (
+                        archive_root / PurePosixPath(*relative_file.parts)
+                    ).as_posix()
+                    if archive_path in archive_entries:
+                        raise ValueError("skills have conflicting archive paths")
+                    archive_entries.add(archive_path)
+                    file_data = _read_archive_file(file_path, skills_dir)
+                    if file_data is not None:
+                        archive.writestr(archive_path, file_data)
     return output.getvalue()
+
+
+def backup_skills_bytes(hermes_dir: str | None = None) -> bytes:
+    """Create an in-memory ZIP of the indexed Skills without touching Hermes home."""
+    skills_dir = _skills_dir(hermes_dir).resolve()
+    skill_roots = _indexed_skill_roots(skills_dir, hermes_dir)
+    discovered_roots = _discover_skill_roots(skills_dir)
+    return _build_skills_zip(skill_roots, discovered_roots, skills_dir)
+
+
+def export_skills_bytes(
+    paths: list[str],
+    hermes_dir: str | None = None,
+) -> bytes:
+    """Create an import-compatible ZIP containing only the requested Skills."""
+    if not paths:
+        raise ValueError("at least one skill path is required")
+
+    skills_dir = _skills_dir(hermes_dir).resolve()
+    source_skills_dir = _source_skills_dir(hermes_dir)
+    selected_roots: list[Path] = []
+    seen_roots: set[Path] = set()
+
+    for path in paths:
+        skill_path, resolved_skills_dir = _resolve_skill_md(path, hermes_dir)
+        source_path = Path(path).expanduser().absolute()
+        if _path_contains_symlink(source_path, source_skills_dir):
+            continue
+        skill_root = _skill_dir_for_path(skill_path, resolved_skills_dir)
+        if skill_root in seen_roots:
+            continue
+        seen_roots.add(skill_root)
+        selected_roots.append(skill_root)
+
+    if not selected_roots:
+        raise ValueError("no exportable skills were selected")
+
+    discovered_roots = _discover_skill_roots(skills_dir)
+    all_roots = list(dict.fromkeys([*discovered_roots, *selected_roots]))
+    return _build_skills_zip(selected_roots, all_roots, skills_dir)
 
 
 def _zip_member_parts(name: str) -> tuple[str, ...]:
@@ -409,12 +616,19 @@ def _scan_skill_zip(
         entries.append((info, parts))
         root = _skill_root_from_parts(parts)
         if root:
-            _validate_slug(root[1], "category")
-            _validate_slug(root[2], "name")
             roots.append(root)
 
     unique_roots: dict[tuple[str, ...], tuple[str, str]] = {}
     for root_parts, category, name in roots:
+        if any(
+            other_parts != root_parts
+            and _is_under_parts(root_parts, other_parts)
+            and root_parts[len(other_parts)] in _SKILL_SUPPORT_DIRS
+            for other_parts, _, _ in roots
+        ):
+            continue
+        _validate_slug(category, "category")
+        _validate_slug(name, "name")
         unique_roots[root_parts] = (category, name)
     if not unique_roots:
         raise ValueError("zip archive does not contain any SKILL.md files")

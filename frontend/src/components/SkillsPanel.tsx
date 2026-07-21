@@ -380,6 +380,29 @@ async function downloadSkillsBackup() {
   URL.revokeObjectURL(url)
 }
 
+async function downloadSelectedSkills(paths: string[]) {
+  const res = await fetch('/api/skills/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+  })
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null)
+    const detail = payload?.detail || payload?.message || res.statusText
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'hermes-skills-export.zip'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function searchSkillMarket(query: string, source: string) {
   const params = new URLSearchParams({
     q: query,
@@ -1730,6 +1753,21 @@ export default function SkillsPanel() {
     }
   }
 
+  const handleBatchExport = async () => {
+    if (!selectedSkills.length) return
+    setBatchBusy(true)
+    setOperationError('')
+    setConfirmDeletePath('')
+    setBatchDeleteConfirming(false)
+    try {
+      await downloadSelectedSkills(selectedSkills.map(skill => skill.path))
+    } catch (err) {
+      setOperationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
   const handleBatchDelete = async () => {
     if (!selectedSkills.length) return
     if (!batchDeleteConfirming) {
@@ -1927,6 +1965,9 @@ export default function SkillsPanel() {
               </button>
               <button type="button" onClick={() => handleBatchSetEnabled(false)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}>
                 {t('skills.batchDisable')}
+              </button>
+              <button type="button" onClick={handleBatchExport} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.batchExport')}
               </button>
               <button type="button" onClick={handleBatchDelete} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}>
                 {batchDeleteConfirming ? t('skills.batchConfirmDelete') : t('skills.batchDelete')}

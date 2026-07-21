@@ -189,6 +189,24 @@ def test_skills_panel_supports_batch_operations_with_delete_confirmation() -> No
     assert "t('skills.clearSelection')" not in panel
 
 
+def test_skills_panel_supports_batch_export_without_clearing_selection() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "downloadSelectedSkills" in panel
+    assert "fetch('/api/skills/export'" in panel
+    assert "JSON.stringify({ paths })" in panel
+    assert "handleBatchExport" in panel
+    assert "await downloadSelectedSkills(selectedSkills.map(skill => skill.path))" in panel
+    assert "onClick={handleBatchExport}" in panel
+    assert "skills.batchExport" in panel
+    assert "disabled={!selectedSkills.length || batchBusy}" in panel
+
+    export_handler = panel.split("const handleBatchExport", 1)[1].split(
+        "const handleBatchDelete", 1
+    )[0]
+    assert "clearBatchSelection()" not in export_handler
+
+
 def test_skills_panel_exposes_zip_import_and_market_install() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
@@ -370,6 +388,7 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.disabled': 'Disabled'" in translations
     assert "'skills.batchEnable': 'Enable selected'" in translations
     assert "'skills.batchDisable': 'Disable selected'" in translations
+    assert "'skills.batchExport': 'Export selected'" in translations
     assert "'skills.batchDelete': 'Delete selected'" in translations
     assert "'skills.batchConfirmDelete': 'Confirm batch delete'" in translations
     assert "'skills.selectedCount': '{count} selected'" in translations
@@ -420,6 +439,7 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.disabled': '已禁用'" in translations
     assert "'skills.batchEnable': '批量启用'" in translations
     assert "'skills.batchDisable': '批量禁用'" in translations
+    assert "'skills.batchExport': '批量导出'" in translations
     assert "'skills.batchDelete': '批量删除'" in translations
     assert "'skills.batchConfirmDelete': '确认批量删除'" in translations
     assert "'skills.selectedCount': '已选择 {count} 个'" in translations

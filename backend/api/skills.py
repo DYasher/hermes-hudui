@@ -14,6 +14,7 @@ from backend.services.skills_manager import (
     backup_skills_bytes,
     create_skill,
     delete_skill,
+    export_skills_bytes,
     import_skills_zip_bytes,
     install_market_skill,
     preview_skills_zip_bytes,
@@ -54,6 +55,10 @@ class SkillToggleRequest(BaseModel):
 
 class SkillDeleteRequest(BaseModel):
     path: str
+
+
+class SkillExportRequest(BaseModel):
+    paths: list[str]
 
 
 class SkillMarketInstallRequest(BaseModel):
@@ -174,6 +179,28 @@ async def backup_skills():
             "Content-Disposition": 'attachment; filename="hermes-skills-backup.zip"'
         },
     )
+
+
+@router.post("/skills/export")
+async def export_skills(request: SkillExportRequest):
+    try:
+        payload = await run_in_threadpool(export_skills_bytes, request.paths)
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": 'attachment; filename="hermes-skills-export.zip"'
+            },
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except OSError:
+        raise HTTPException(
+            status_code=503,
+            detail="selected skill files could not be read",
+        )
 
 
 @router.post("/skills/import-zip")
