@@ -16,6 +16,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import yaml
 
@@ -54,6 +55,7 @@ _SKILL_SCAN_EXCLUDED_DIRS = {
     ".ruff_cache",
 }
 _SKILL_SUPPORT_DIRS = {"references", "templates", "assets", "scripts"}
+_MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 
 
 def _hermes_path(hermes_dir: str | None = None) -> Path:
@@ -190,6 +192,147 @@ def _default_skill_content(name: str, description: str) -> str:
     return f"---\n{frontmatter}\n---\n\n{body}"
 
 
+def _validation_issue(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
+
+
+def _markdown_link_target(raw_target: str) -> str:
+    target = raw_target.strip()
+    if target.startswith("<") and ">" in target:
+        target = target[1 : target.index(">")]
+    else:
+        target = target.split(maxsplit=1)[0] if target else ""
+    return unquote(target).split("#", 1)[0]
+
+
+def validate_skill_content(
+    content: str,
+    path: str | None = None,
+    hermes_dir: str | None = None,
+    available_files: set[str] | None = None,
+    check_duplicates: bool = True,
+) -> dict[str, Any]:
+    errors: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+    metadata: dict[str, str] = {}
+    text = str(content or "")
+
+    if not text.strip():
+        errors.append(_validation_issue("empty_content", "SKILL.md content is required"))
+    elif text.startswith("---"):
+        match = re.match(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", text, re.DOTALL)
+        if not match:
+            errors.append(
+                _validation_issue(
+                    "invalid_frontmatter",
+                    "YAML frontmatter is missing its closing delimiter",
+                )
+            )
+        else:
+            try:
+                parsed = yaml.safe_load(match.group(1)) or {}
+            except yaml.YAMLError:
+                parsed = None
+            if not isinstance(parsed, dict):
+                errors.append(
+                    _validation_issue(
+                        "invalid_frontmatter",
+                        "YAML frontmatter must be a valid mapping",
+                    )
+                )
+            else:
+                for field in ("name", "description"):
+                    value = str(parsed.get(field) or "").strip()
+                    if value:
+                        metadata[field] = value
+    else:
+        warnings.append(
+            _validation_issue(
+                "missing_frontmatter",
+                "SKILL.md does not contain YAML frontmatter",
+            )
+        )
+
+    name = metadata.get("name", "")
+    if not name:
+        warnings.append(_validation_issue("missing_name", "frontmatter name is missing"))
+    if not metadata.get("description"):
+        warnings.append(
+            _validation_issue(
+                "missing_description",
+                "frontmatter description is missing",
+            )
+        )
+
+    current_path = Path(path).expanduser().resolve() if path else None
+    if name and check_duplicates:
+        for skill in collect_skills(hermes_dir).skills:
+            other_path = Path(skill.path).expanduser().resolve()
+            if current_path is not None and other_path == current_path:
+                continue
+            if skill.name.strip().casefold() == name.casefold():
+                errors.append(
+                    _validation_issue(
+                        "duplicate_name",
+                        f"another Skill already uses the name '{name}'",
+                    )
+                )
+                break
+
+    seen_references: set[str] = set()
+    for match in _MARKDOWN_LINK.finditer(text):
+        target = _markdown_link_target(match.group(1))
+        if not target or target in seen_references:
+            continue
+        seen_references.add(target)
+        parsed_target = urlsplit(target)
+        if parsed_target.scheme or parsed_target.netloc:
+            continue
+        pure_target = PurePosixPath(target.replace("\\", "/"))
+        if pure_target.is_absolute() or ".." in pure_target.parts:
+            errors.append(
+                _validation_issue(
+                    "unsafe_reference",
+                    f"reference escapes the Skill directory: {target}",
+                )
+            )
+            continue
+
+        normalized_target = pure_target.as_posix()
+        exists = False
+        if available_files is not None:
+            exists = normalized_target in available_files
+        elif current_path is not None:
+            skill_root = current_path.parent.resolve()
+            candidate = (skill_root / Path(*pure_target.parts)).resolve()
+            if not _path_is_under(candidate, skill_root):
+                errors.append(
+                    _validation_issue(
+                        "unsafe_reference",
+                        f"reference escapes the Skill directory: {target}",
+                    )
+                )
+                continue
+            exists = candidate.is_file()
+        else:
+            continue
+
+        if not exists:
+            warnings.append(
+                _validation_issue(
+                    "missing_reference",
+                    f"referenced file does not exist: {target}",
+                )
+            )
+
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "metadata": metadata,
+    }
+
+
 def save_skill_content(
     path: str,
     content: str,
@@ -198,6 +341,14 @@ def save_skill_content(
     if not str(content or "").strip():
         raise ValueError("content is required")
     skill_path, skills_dir = _resolve_skill_md(path, hermes_dir)
+    validation = validate_skill_content(
+        content,
+        path=str(skill_path),
+        hermes_dir=hermes_dir,
+    )
+    if not validation["valid"]:
+        messages = "; ".join(item["message"] for item in validation["errors"])
+        raise ValueError(f"skill validation failed: {messages}")
     backup_path = _backup_file(skill_path, skills_dir, "save")
     _write_text_atomic(skill_path, content)
     clear_cache()
@@ -653,6 +804,64 @@ def _plan_skill_imports(
     return planned
 
 
+def _validate_zip_skill_contents(
+    archive: zipfile.ZipFile,
+    entries: list[tuple[zipfile.ZipInfo, tuple[str, ...]]],
+    unique_roots: dict[tuple[str, ...], tuple[str, str]],
+) -> dict[tuple[str, ...], dict[str, Any]]:
+    info_by_parts = {parts: info for info, parts in entries}
+    validations: dict[tuple[str, ...], dict[str, Any]] = {}
+    names: dict[str, list[tuple[str, ...]]] = {}
+
+    for root_parts in unique_roots:
+        skill_parts = (*root_parts, "SKILL.md")
+        info = info_by_parts[skill_parts]
+        try:
+            content = archive.read(info).decode("utf-8")
+        except UnicodeDecodeError:
+            validation = {
+                "valid": False,
+                "errors": [
+                    _validation_issue(
+                        "invalid_encoding",
+                        "SKILL.md must use UTF-8 encoding",
+                    )
+                ],
+                "warnings": [],
+                "metadata": {},
+            }
+        else:
+            available_files = {
+                PurePosixPath(*parts[len(root_parts) :]).as_posix()
+                for _, parts in entries
+                if len(parts) > len(root_parts)
+                and _is_under_parts(parts, root_parts)
+            }
+            validation = validate_skill_content(
+                content,
+                available_files=available_files,
+                check_duplicates=False,
+            )
+        validations[root_parts] = validation
+        name = validation["metadata"].get("name", "").casefold()
+        if name:
+            names.setdefault(name, []).append(root_parts)
+
+    for duplicate_roots in names.values():
+        if len(duplicate_roots) < 2:
+            continue
+        for root_parts in duplicate_roots:
+            validations[root_parts]["errors"].append(
+                _validation_issue(
+                    "duplicate_name",
+                    "multiple imported Skills use the same name",
+                )
+            )
+            validations[root_parts]["valid"] = False
+
+    return validations
+
+
 def preview_skills_zip_bytes(
     data: bytes,
     filename: str = "skills.zip",
@@ -662,7 +871,8 @@ def preview_skills_zip_bytes(
     _validate_zip_payload(data)
     skills_dir = _skills_dir(hermes_dir)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        _, unique_roots = _scan_skill_zip(archive)
+        entries, unique_roots = _scan_skill_zip(archive)
+        validations = _validate_zip_skill_contents(archive, entries, unique_roots)
 
     planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
     items = [
@@ -671,8 +881,10 @@ def preview_skills_zip_bytes(
             "category": category,
             "status": status,
             "path": str(dest_dir / "SKILL.md"),
+            "validation": validation,
         }
-        for _, category, name, status, dest_dir in planned
+        for root_parts, category, name, status, dest_dir in planned
+        for validation in [validations[root_parts]]
     ]
     return {
         "preview": True,
@@ -696,6 +908,19 @@ def import_skills_zip_bytes(
     skills_dir = _skills_dir(hermes_dir)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         entries, unique_roots = _scan_skill_zip(archive)
+        validations = _validate_zip_skill_contents(archive, entries, unique_roots)
+        invalid = [
+            validation
+            for validation in validations.values()
+            if not validation["valid"]
+        ]
+        if invalid:
+            messages = "; ".join(
+                issue["message"]
+                for validation in invalid
+                for issue in validation["errors"]
+            )
+            raise ValueError(f"skill validation failed: {messages}")
         planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
 
         items: list[dict[str, Any]] = []

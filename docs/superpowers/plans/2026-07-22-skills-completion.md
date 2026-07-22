@@ -35,12 +35,12 @@
 
 ### 任务 2：Skill 完整性检查
 
-- [ ] 为 `validate_skill_content()` 编写测试：合法 frontmatter、格式错误、名称冲突、缺少说明、缺失本地引用和越界引用。
-- [ ] 新增 `POST /api/skills/validate`；保存前对错误执行硬阻断，警告允许保存。
-- [ ] ZIP 预览为每个 `SKILL.md` 返回校验错误/警告，正式导入拒绝包含错误的 Skill。
-- [ ] 编辑器增加“检查”操作和错误/警告列表，保存前自动检查。
-- [ ] 运行 API、前端测试和构建。
-- [ ] 提交 `feat: validate skill content before writes`。
+- [x] 为 `validate_skill_content()` 编写测试：合法 frontmatter、格式错误、名称冲突、缺少说明、缺失本地引用和越界引用。
+- [x] 新增 `POST /api/skills/validate`；保存前对错误执行硬阻断，警告允许保存。
+- [x] ZIP 预览为每个 `SKILL.md` 返回校验错误/警告，正式导入拒绝包含错误的 Skill。
+- [x] 编辑器增加“检查”操作和错误/警告列表，保存前自动检查。
+- [x] 运行 API、前端测试和构建。
+- [x] 提交 `feat: validate skill content before writes`。
 
 ### 任务 3：批量移动分类和复制 Skill
 

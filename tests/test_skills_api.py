@@ -49,6 +49,7 @@ def test_skill_management_routes_are_registered(registered_routes) -> None:
     assert ("DELETE", "/api/skills") in registered_routes
     assert ("GET", "/api/skills/backup") in registered_routes
     assert ("POST", "/api/skills/export") in registered_routes
+    assert ("POST", "/api/skills/validate") in registered_routes
     assert ("POST", "/api/skills/import-zip") in registered_routes
     assert ("GET", "/api/skills/market/search") in registered_routes
     assert ("POST", "/api/skills/market/install") in registered_routes
@@ -626,6 +627,83 @@ def test_save_skill_content_updates_skill_md_and_rejects_outside_paths(
         )
 
 
+def test_validate_skill_content_reports_metadata_references_and_duplicates(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    existing = hermes_home / "skills" / "core" / "existing" / "SKILL.md"
+    existing.parent.mkdir(parents=True)
+    existing.write_text(
+        "---\nname: existing\ndescription: Existing skill\n---\n# Existing\n",
+        encoding="utf-8",
+    )
+    current = hermes_home / "skills" / "core" / "current" / "SKILL.md"
+    current.parent.mkdir(parents=True)
+    (current.parent / "references").mkdir()
+    (current.parent / "references" / "notes.md").write_text("notes", encoding="utf-8")
+    current.write_text("# Current\n", encoding="utf-8")
+    clear_cache()
+
+    valid = skills_manager.validate_skill_content(
+        "---\nname: current\ndescription: Current skill\n---\n"
+        "# Current\n\n[Notes](references/notes.md)\n",
+        path=str(current),
+    )
+    assert valid["valid"] is True
+    assert valid["errors"] == []
+    assert valid["metadata"] == {
+        "name": "current",
+        "description": "Current skill",
+    }
+
+    invalid = skills_manager.validate_skill_content(
+        "---\nname: existing\n---\n# Duplicate\n"
+        "[Missing](references/missing.md)\n"
+        "[Outside](../outside.md)\n",
+        path=str(current),
+    )
+    assert invalid["valid"] is False
+    assert {item["code"] for item in invalid["errors"]} == {
+        "duplicate_name",
+        "unsafe_reference",
+    }
+    assert {item["code"] for item in invalid["warnings"]} == {
+        "missing_description",
+        "missing_reference",
+    }
+
+
+def test_validate_skill_content_rejects_malformed_frontmatter() -> None:
+    from backend.services import skills_manager
+
+    result = skills_manager.validate_skill_content(
+        "---\nname: [broken\n---\n# Broken\n"
+    )
+
+    assert result["valid"] is False
+    assert result["errors"][0]["code"] == "invalid_frontmatter"
+
+
+def test_save_skill_content_blocks_validation_errors_without_writing(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill = hermes_home / "skills" / "core" / "validated" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    original = "---\nname: validated\ndescription: Valid\n---\n# Valid\n"
+    skill.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="validation failed"):
+        skills_manager.save_skill_content(
+            str(skill),
+            "---\nname: [broken\n---\n# Broken\n",
+        )
+
+    assert skill.read_text(encoding="utf-8") == original
+
+
 def test_create_skill_writes_safe_skill_md_template(hermes_home: Path) -> None:
     from backend.services import skills_manager
 
@@ -813,6 +891,34 @@ def test_preview_skills_zip_classifies_conflicts_without_writing(
         Path(os.environ["XDG_CACHE_HOME"]) / "hermes-hudui" / "skill-backups"
     )
     assert not backup_root.exists()
+
+
+def test_zip_preview_reports_validation_and_import_rejects_invalid_skill(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(
+            "bundle/skills/research/broken/SKILL.md",
+            "---\nname: [broken\n---\n# Broken\n",
+        )
+
+    preview = skills_manager.preview_skills_zip_bytes(
+        archive.getvalue(),
+        filename="broken.zip",
+    )
+    assert preview["items"][0]["validation"]["valid"] is False
+    assert preview["items"][0]["validation"]["errors"][0]["code"] == (
+        "invalid_frontmatter"
+    )
+
+    with pytest.raises(ValueError, match="validation failed"):
+        skills_manager.import_skills_zip_bytes(
+            archive.getvalue(),
+            filename="broken.zip",
+        )
 
 
 def test_import_skills_zip_overwrites_only_after_preview(

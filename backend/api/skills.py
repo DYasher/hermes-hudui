@@ -21,6 +21,7 @@ from backend.services.skills_manager import (
     save_skill_content,
     search_skill_market,
     set_skill_enabled,
+    validate_skill_content,
 )
 from .serialize import to_dict
 
@@ -45,6 +46,11 @@ class SkillCreateRequest(BaseModel):
 
 class SkillSaveRequest(BaseModel):
     path: str
+    content: str
+
+
+class SkillValidateRequest(BaseModel):
+    path: str | None = None
     content: str
 
 
@@ -141,6 +147,19 @@ async def save_skill_detail(request: SkillSaveRequest):
         return to_dict(result)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/skills/validate")
+async def validate_skill(request: SkillValidateRequest):
+    try:
+        result = await run_in_threadpool(
+            validate_skill_content,
+            request.content,
+            request.path,
+        )
+        return to_dict(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

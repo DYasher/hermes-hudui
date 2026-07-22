@@ -157,6 +157,23 @@ def test_skills_panel_exposes_management_actions_and_editor() -> None:
     assert "skills.disableSkill" in panel
 
 
+def test_skills_panel_validates_editor_and_import_preview() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "type SkillValidationResult" in panel
+    assert "validateSkillContent" in panel
+    assert "fetch('/api/skills/validate'" in panel
+    assert "const checkEditor" in panel
+    assert "const validation = await validateSkillContent(data.path, editorContent)" in panel
+    assert "if (!validation.valid) return" in panel
+    assert "skills.checkSkill" in panel
+    assert "skills.validationErrors" in panel
+    assert "skills.validationWarnings" in panel
+    assert "item.validation" in panel
+    assert "previewHasValidationErrors" in panel
+    assert "!previewResult || previewHasValidationErrors" in panel
+
+
 def test_skill_item_places_management_actions_on_right_side() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
@@ -300,7 +317,7 @@ def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
     assert "const previewImport = async ()" in panel
     assert "await importSkillsZip(selectedZipFile, overwrite, true)" in panel
     assert "await importSkillsZip(selectedZipFile, overwrite, false)" in panel
-    assert "disabled={Boolean(busy) || !selectedZipFile || !previewResult}" in panel
+    assert "disabled={Boolean(busy) || !selectedZipFile || !previewResult || previewHasValidationErrors}" in panel
     assert "skills.previewImport" in panel
     assert "skills.confirmImport" in panel
     assert "skills.importWillAdd" in panel
@@ -408,6 +425,9 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.editSkill': 'Edit'" in translations
     assert "'skills.previewSkill': 'Preview'" in translations
     assert "'skills.saveSkill': 'Save skill'" in translations
+    assert "'skills.checkSkill': 'Check'" in translations
+    assert "'skills.validationErrors': 'Errors'" in translations
+    assert "'skills.validationWarnings': 'Warnings'" in translations
     assert "'skills.deleteSkill': 'Delete'" in translations
     assert "'skills.enableSkill': 'Enable'" in translations
     assert "'skills.disableSkill': 'Disable'" in translations
@@ -467,6 +487,9 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.editSkill': '编辑'" in translations
     assert "'skills.previewSkill': '预览'" in translations
     assert "'skills.saveSkill': '保存技能'" in translations
+    assert "'skills.checkSkill': '检查'" in translations
+    assert "'skills.validationErrors': '错误'" in translations
+    assert "'skills.validationWarnings': '警告'" in translations
     assert "'skills.deleteSkill': '删除'" in translations
     assert "'skills.enableSkill': '启用'" in translations
     assert "'skills.disableSkill': '禁用'" in translations

@@ -64,10 +64,21 @@ type SkillMarketInstallState = {
   status: 'installing' | 'success' | 'error'
   message?: string
 }
+type SkillValidationIssue = {
+  code: string
+  message: string
+}
+type SkillValidationResult = {
+  valid: boolean
+  errors: SkillValidationIssue[]
+  warnings: SkillValidationIssue[]
+  metadata?: Record<string, string>
+}
 type SkillImportItem = {
   name: string
   category: string
   status: 'add' | 'overwrite' | 'skip' | 'installed' | 'overwritten' | 'skipped'
+  validation?: SkillValidationResult
 }
 type SkillImportPreview = {
   preview: true
@@ -337,6 +348,15 @@ async function createSkill(payload: {
 async function saveSkillContent(path: string, content: string) {
   const res = await fetch('/api/skills/detail', {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  })
+  return readJsonResponse(res)
+}
+
+async function validateSkillContent(path: string, content: string): Promise<SkillValidationResult> {
+  const res = await fetch('/api/skills/validate', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, content }),
   })
@@ -721,6 +741,8 @@ function SkillDetailModal({
   const [editorContent, setEditorContent] = useState('')
   const [editorError, setEditorError] = useState('')
   const [editorSaving, setEditorSaving] = useState(false)
+  const [editorChecking, setEditorChecking] = useState(false)
+  const [editorValidation, setEditorValidation] = useState<SkillValidationResult | null>(null)
   const [translation, setTranslation] = useState('')
   const [translationSourceLang, setTranslationSourceLang] = useState('')
   const [translationTargetLang, setTranslationTargetLang] = useState('')
@@ -800,6 +822,7 @@ function SkillDetailModal({
     setIsEditing(false)
     setEditorContent('')
     setEditorError('')
+    setEditorValidation(null)
   }, [path])
 
   useEffect(() => {
@@ -911,13 +934,29 @@ function SkillDetailModal({
   const startEditing = () => {
     setEditorContent(data?.content || '')
     setEditorError('')
+    setEditorValidation(null)
     setIsEditing(true)
   }
 
   const cancelEditing = () => {
     setEditorContent(data?.content || '')
     setEditorError('')
+    setEditorValidation(null)
     setIsEditing(false)
+  }
+
+  const checkEditor = async () => {
+    if (!data?.path) return
+    setEditorChecking(true)
+    setEditorError('')
+    try {
+      const validation = await validateSkillContent(data.path, editorContent)
+      setEditorValidation(validation)
+    } catch (err) {
+      setEditorError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setEditorChecking(false)
+    }
   }
 
   const saveEditor = async () => {
@@ -925,6 +964,9 @@ function SkillDetailModal({
     setEditorSaving(true)
     setEditorError('')
     try {
+      const validation = await validateSkillContent(data.path, editorContent)
+      setEditorValidation(validation)
+      if (!validation.valid) return
       await saveSkillContent(data.path, editorContent)
       await mutate()
       onChanged()
@@ -1053,6 +1095,17 @@ function SkillDetailModal({
             {isEditing && (
               <button
                 type="button"
+                onClick={checkEditor}
+                disabled={editorChecking || editorSaving || !editorContent.trim()}
+                className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+                style={{ color: 'var(--hud-primary)', background: 'transparent', border: '1px solid var(--hud-border)' }}
+              >
+                {editorChecking ? '...' : t('skills.checkSkill')}
+              </button>
+            )}
+            {isEditing && (
+              <button
+                type="button"
                 onClick={saveEditor}
                 disabled={editorSaving || !editorContent.trim()}
                 className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
@@ -1098,6 +1151,22 @@ function SkillDetailModal({
           {editorError && (
             <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-error)' }}>
               {editorError}
+            </div>
+          )}
+          {isEditing && editorValidation && (editorValidation.errors.length > 0 || editorValidation.warnings.length > 0) && (
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+              {editorValidation.errors.length > 0 && (
+                <div style={{ color: 'var(--hud-error)' }}>
+                  <span className="font-bold">{t('skills.validationErrors')}:</span>{' '}
+                  {editorValidation.errors.map(issue => issue.message).join('; ')}
+                </div>
+              )}
+              {editorValidation.warnings.length > 0 && (
+                <div style={{ color: 'var(--hud-warning)' }}>
+                  <span className="font-bold">{t('skills.validationWarnings')}:</span>{' '}
+                  {editorValidation.warnings.map(issue => issue.message).join('; ')}
+                </div>
+              )}
             </div>
           )}
           {!isEditing && (
@@ -1182,7 +1251,10 @@ function SkillDetailModal({
           {!error && isCurrentDetail && data && isEditing && (
             <textarea
               value={editorContent}
-              onChange={event => setEditorContent(event.target.value)}
+              onChange={event => {
+                setEditorContent(event.target.value)
+                setEditorValidation(null)
+              }}
               data-skill-editor
               className="w-full h-full min-h-0 resize-none p-3 font-mono text-[13px] outline-none"
               style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
@@ -1350,6 +1422,9 @@ function SkillImportModal({
     if (status === 'skipped') return t('skills.importSkipped')
     return t('skills.importInstalled')
   }
+  const previewHasValidationErrors = Boolean(
+    previewResult?.items.some(item => item.validation && !item.validation.valid),
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
@@ -1412,11 +1487,23 @@ function SkillImportModal({
               </div>
               <div className="space-y-1">
                 {previewResult.items.map(item => (
-                  <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
-                    <span style={{ color: item.status === 'add' ? 'var(--hud-primary)' : item.status === 'overwrite' ? 'var(--hud-warning)' : 'var(--hud-text-dim)' }}>
-                      {importStatusLabel(item.status)}
-                    </span>
-                    {' '} {item.category}/{item.name}
+                  <div key={`${item.category}/${item.name}`} className="text-[12px] px-2 py-1.5" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text-dim)' }}>
+                    <div>
+                      <span style={{ color: item.status === 'add' ? 'var(--hud-primary)' : item.status === 'overwrite' ? 'var(--hud-warning)' : 'var(--hud-text-dim)' }}>
+                        {importStatusLabel(item.status)}
+                      </span>
+                      {' '} {item.category}/{item.name}
+                    </div>
+                    {item.validation?.errors.map(issue => (
+                      <div key={`error-${issue.code}-${issue.message}`} className="mt-1 text-[11px]" style={{ color: 'var(--hud-error)' }}>
+                        {t('skills.validationErrors')}: {issue.message}
+                      </div>
+                    ))}
+                    {item.validation?.warnings.map(issue => (
+                      <div key={`warning-${issue.code}-${issue.message}`} className="mt-1 text-[11px]" style={{ color: 'var(--hud-warning)' }}>
+                        {t('skills.validationWarnings')}: {issue.message}
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -1440,7 +1527,7 @@ function SkillImportModal({
           <button type="button" onClick={previewImport} disabled={Boolean(busy) || !selectedZipFile} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
             {busy === 'preview' ? '...' : isRestore ? t('skills.previewRestore') : t('skills.previewImport')}
           </button>
-          <button type="button" onClick={submit} disabled={Boolean(busy) || !selectedZipFile || !previewResult} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
+          <button type="button" onClick={submit} disabled={Boolean(busy) || !selectedZipFile || !previewResult || previewHasValidationErrors} className="px-3 py-1.5 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-primary)', border: '1px solid var(--hud-primary)' }}>
             {busy === 'import' ? '...' : isRestore ? t('skills.confirmRestore') : t('skills.confirmImport')}
           </button>
         </div>
