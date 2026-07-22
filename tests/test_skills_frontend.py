@@ -174,6 +174,23 @@ def test_skills_panel_validates_editor_and_import_preview() -> None:
     assert "!previewResult || previewHasValidationErrors" in panel
 
 
+def test_skills_panel_supports_batch_move_and_skill_duplication() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "moveSkill" in panel
+    assert "duplicateSkill" in panel
+    assert "fetch('/api/skills/move'" in panel
+    assert "fetch('/api/skills/duplicate'" in panel
+    assert "batchMoveCategory" in panel
+    assert "const handleBatchMove" in panel
+    assert "requestBatchConfirmation('move')" in panel
+    assert "await moveSkill(skill.path, targetCategory)" in panel
+    assert "skills.batchMove" in panel
+    assert "skills.batchConfirmMove" in panel
+    assert "skills.duplicateSkill" in panel
+    assert "onDuplicated" in panel
+
+
 def test_skill_item_places_management_actions_on_right_side() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
@@ -428,6 +445,9 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.checkSkill': 'Check'" in translations
     assert "'skills.validationErrors': 'Errors'" in translations
     assert "'skills.validationWarnings': 'Warnings'" in translations
+    assert "'skills.batchMove': 'Move selected'" in translations
+    assert "'skills.batchConfirmMove': 'Confirm moving {count}'" in translations
+    assert "'skills.duplicateSkill': 'Duplicate'" in translations
     assert "'skills.deleteSkill': 'Delete'" in translations
     assert "'skills.enableSkill': 'Enable'" in translations
     assert "'skills.disableSkill': 'Disable'" in translations
@@ -490,6 +510,9 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.checkSkill': '检查'" in translations
     assert "'skills.validationErrors': '错误'" in translations
     assert "'skills.validationWarnings': '警告'" in translations
+    assert "'skills.batchMove': '批量移动'" in translations
+    assert "'skills.batchConfirmMove': '确认移动 {count} 个'" in translations
+    assert "'skills.duplicateSkill': '复制技能'" in translations
     assert "'skills.deleteSkill': '删除'" in translations
     assert "'skills.enableSkill': '启用'" in translations
     assert "'skills.disableSkill': '禁用'" in translations

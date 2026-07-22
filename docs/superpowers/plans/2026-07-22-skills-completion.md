@@ -44,13 +44,13 @@
 
 ### 任务 3：批量移动分类和复制 Skill
 
-- [ ] 测试 `move_skill(path, category)`：移动完整目录、拒绝目标冲突、备份原目录、拒绝越界路径。
-- [ ] 测试 `duplicate_skill(path, category, name)`：复制支持文件、更新 frontmatter 名称、拒绝目标冲突和符号链接。
-- [ ] 新增 `POST /api/skills/move` 与 `POST /api/skills/duplicate`。
-- [ ] 批量栏增加目标分类输入和需二次确认的“移动分类”，接入进度和失败重试。
-- [ ] Skill 详情增加复制表单，成功后刷新并打开副本。
-- [ ] 运行测试和构建。
-- [ ] 提交 `feat: move and duplicate skills`。
+- [x] 测试 `move_skill(path, category)`：移动完整目录、拒绝目标冲突、备份原目录、拒绝越界路径。
+- [x] 测试 `duplicate_skill(path, category, name)`：复制支持文件、更新 frontmatter 名称、拒绝目标冲突和符号链接。
+- [x] 新增 `POST /api/skills/move` 与 `POST /api/skills/duplicate`。
+- [x] 批量栏增加目标分类输入和需二次确认的“移动分类”，接入进度和失败重试。
+- [x] Skill 详情增加复制表单，成功后刷新并打开副本。
+- [x] 运行测试和构建。
+- [x] 提交 `feat: move and duplicate skills`。
 
 ### 任务 4：技能市场版本和更新
 

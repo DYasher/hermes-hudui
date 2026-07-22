@@ -14,9 +14,11 @@ from backend.services.skills_manager import (
     backup_skills_bytes,
     create_skill,
     delete_skill,
+    duplicate_skill,
     export_skills_bytes,
     import_skills_zip_bytes,
     install_market_skill,
+    move_skill,
     preview_skills_zip_bytes,
     save_skill_content,
     search_skill_market,
@@ -52,6 +54,17 @@ class SkillSaveRequest(BaseModel):
 class SkillValidateRequest(BaseModel):
     path: str | None = None
     content: str
+
+
+class SkillMoveRequest(BaseModel):
+    path: str
+    category: str
+
+
+class SkillDuplicateRequest(BaseModel):
+    path: str
+    category: str
+    name: str
 
 
 class SkillToggleRequest(BaseModel):
@@ -160,6 +173,41 @@ async def validate_skill(request: SkillValidateRequest):
             request.path,
         )
         return to_dict(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/skills/move")
+async def move_skill_endpoint(request: SkillMoveRequest):
+    try:
+        result = await run_in_threadpool(
+            move_skill,
+            request.path,
+            request.category,
+        )
+        return to_dict(result)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/skills/duplicate")
+async def duplicate_skill_endpoint(request: SkillDuplicateRequest):
+    try:
+        result = await run_in_threadpool(
+            duplicate_skill,
+            request.path,
+            request.category,
+            request.name,
+        )
+        return to_dict(result)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -50,6 +50,8 @@ def test_skill_management_routes_are_registered(registered_routes) -> None:
     assert ("GET", "/api/skills/backup") in registered_routes
     assert ("POST", "/api/skills/export") in registered_routes
     assert ("POST", "/api/skills/validate") in registered_routes
+    assert ("POST", "/api/skills/move") in registered_routes
+    assert ("POST", "/api/skills/duplicate") in registered_routes
     assert ("POST", "/api/skills/import-zip") in registered_routes
     assert ("GET", "/api/skills/market/search") in registered_routes
     assert ("POST", "/api/skills/market/install") in registered_routes
@@ -784,6 +786,105 @@ def test_delete_skill_moves_skill_directory_to_hud_backup(hermes_home: Path) -> 
     assert (backup_path / "references" / "notes.md").read_text(encoding="utf-8") == "notes"
     with pytest.raises(ValueError):
         backup_path.resolve().relative_to(hermes_home.resolve())
+
+
+def test_move_skill_moves_directory_and_backs_up_source(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    source = hermes_home / "skills" / "core" / "debug-helper"
+    skill_md = source / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text(
+        "---\nname: debug-helper\ndescription: Debug\n---\n# Debug\n",
+        encoding="utf-8",
+    )
+    (source / "references").mkdir()
+    (source / "references" / "notes.md").write_text("notes", encoding="utf-8")
+
+    result = skills_manager.move_skill(str(skill_md), "research")
+
+    moved = hermes_home / "skills" / "research" / "debug-helper"
+    assert result["moved"] is True
+    assert result["path"] == str(moved / "SKILL.md")
+    assert not source.exists()
+    assert (moved / "references" / "notes.md").read_text(encoding="utf-8") == "notes"
+    backup = Path(result["backup_path"])
+    assert (backup / "SKILL.md").is_file()
+
+
+def test_move_skill_rejects_conflicts_and_outside_paths(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    source = hermes_home / "skills" / "core" / "shared" / "SKILL.md"
+    target = hermes_home / "skills" / "research" / "shared" / "SKILL.md"
+    source.parent.mkdir(parents=True)
+    target.parent.mkdir(parents=True)
+    source.write_text("# Source\n", encoding="utf-8")
+    target.write_text("# Target\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        skills_manager.move_skill(str(source), "research")
+    with pytest.raises(ValueError, match="outside"):
+        skills_manager.move_skill(
+            str(hermes_home / "outside" / "SKILL.md"),
+            "research",
+        )
+
+
+def test_duplicate_skill_copies_support_files_and_updates_name(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    source = hermes_home / "skills" / "core" / "debug-helper"
+    skill_md = source / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text(
+        "---\nname: debug-helper\ndescription: Debug\nversion: 1.2.3\n---\n"
+        "# Debug\n\n[Notes](references/notes.md)\n",
+        encoding="utf-8",
+    )
+    (source / "references").mkdir()
+    (source / "references" / "notes.md").write_text("notes", encoding="utf-8")
+
+    result = skills_manager.duplicate_skill(
+        str(skill_md),
+        "research",
+        "debug-helper-copy",
+    )
+
+    duplicate = hermes_home / "skills" / "research" / "debug-helper-copy"
+    copied_text = (duplicate / "SKILL.md").read_text(encoding="utf-8")
+    assert result["duplicated"] is True
+    assert result["path"] == str(duplicate / "SKILL.md")
+    assert "name: debug-helper-copy" in copied_text
+    assert "version: 1.2.3" in copied_text
+    assert (duplicate / "references" / "notes.md").read_text(encoding="utf-8") == "notes"
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        skills_manager.duplicate_skill(
+            str(skill_md),
+            "research",
+            "debug-helper-copy",
+        )
+
+
+def test_duplicate_skill_rejects_symbolic_links(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    source = hermes_home / "skills" / "core" / "linked"
+    skill_md = source / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text(
+        "---\nname: linked\ndescription: Linked\n---\n# Linked\n",
+        encoding="utf-8",
+    )
+    outside = hermes_home / "outside.txt"
+    outside.write_text("private", encoding="utf-8")
+    (source / "linked.txt").symlink_to(outside)
+
+    with pytest.raises(ValueError, match="symbolic links"):
+        skills_manager.duplicate_skill(str(skill_md), "research", "linked-copy")
 
 
 def test_import_skills_zip_installs_multiple_skills_and_rejects_zip_slip(

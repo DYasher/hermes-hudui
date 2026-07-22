@@ -95,6 +95,7 @@ type SkillImportResult = {
 }
 type BatchOperationResult = SkillBatchResult<SkillInfo> & {
   action: SkillBatchAction
+  targetCategory?: string
 }
 
 const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
@@ -359,6 +360,24 @@ async function validateSkillContent(path: string, content: string): Promise<Skil
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, content }),
+  })
+  return readJsonResponse(res)
+}
+
+async function moveSkill(path: string, category: string) {
+  const res = await fetch('/api/skills/move', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, category }),
+  })
+  return readJsonResponse(res)
+}
+
+async function duplicateSkill(path: string, category: string, name: string) {
+  const res = await fetch('/api/skills/duplicate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, category, name }),
   })
   return readJsonResponse(res)
 }
@@ -729,10 +748,12 @@ function SkillDetailModal({
   path,
   onClose,
   onChanged,
+  onDuplicated,
 }: {
   path: string
   onClose: () => void
   onChanged: () => void
+  onDuplicated: (path: string) => void
 }) {
   const { t } = useTranslation()
   const [translationMode, setTranslationMode] = useState<TranslationMode>('side-by-side')
@@ -743,6 +764,11 @@ function SkillDetailModal({
   const [editorSaving, setEditorSaving] = useState(false)
   const [editorChecking, setEditorChecking] = useState(false)
   const [editorValidation, setEditorValidation] = useState<SkillValidationResult | null>(null)
+  const [duplicateOpen, setDuplicateOpen] = useState(false)
+  const [duplicateCategory, setDuplicateCategory] = useState('')
+  const [duplicateName, setDuplicateName] = useState('')
+  const [duplicateBusy, setDuplicateBusy] = useState(false)
+  const [duplicateError, setDuplicateError] = useState('')
   const [translation, setTranslation] = useState('')
   const [translationSourceLang, setTranslationSourceLang] = useState('')
   const [translationTargetLang, setTranslationTargetLang] = useState('')
@@ -823,6 +849,10 @@ function SkillDetailModal({
     setEditorContent('')
     setEditorError('')
     setEditorValidation(null)
+    setDuplicateOpen(false)
+    setDuplicateCategory('')
+    setDuplicateName('')
+    setDuplicateError('')
   }, [path])
 
   useEffect(() => {
@@ -984,6 +1014,33 @@ function SkillDetailModal({
     }
   }
 
+  const openDuplicateForm = () => {
+    const directoryName = data?.path.split('/').slice(-2, -1)[0] || data?.name || ''
+    setDuplicateCategory(data?.category || 'uncategorized')
+    setDuplicateName(`${directoryName}-copy`)
+    setDuplicateError('')
+    setDuplicateOpen(true)
+  }
+
+  const submitDuplicate = async () => {
+    if (!data?.path || !duplicateCategory.trim() || !duplicateName.trim()) return
+    setDuplicateBusy(true)
+    setDuplicateError('')
+    try {
+      const result = await duplicateSkill(
+        data.path,
+        duplicateCategory.trim(),
+        duplicateName.trim(),
+      )
+      onChanged()
+      onDuplicated(result.path)
+    } catch (err) {
+      setDuplicateError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDuplicateBusy(false)
+    }
+  }
+
   const showOriginal = translationMode === 'side-by-side' || translationMode === 'original'
   const showTranslation = translationMode === 'side-by-side' || translationMode === 'translation'
   const canSyncCompare = syncCompareEnabled && showOriginal && showTranslation
@@ -1114,6 +1171,17 @@ function SkillDetailModal({
                 {editorSaving ? '...' : t('skills.saveSkill')}
               </button>
             )}
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={duplicateOpen ? () => setDuplicateOpen(false) : openDuplicateForm}
+                disabled={!isCurrentDetail || !data || duplicateBusy}
+                className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40"
+                style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}
+              >
+                {duplicateOpen ? t('memory.cancel') : t('skills.duplicateSkill')}
+              </button>
+            )}
             {[
               ['side-by-side', t('skills.sideBySide')],
               ['original', t('skills.originalOnly')],
@@ -1165,6 +1233,42 @@ function SkillDetailModal({
                 <div style={{ color: 'var(--hud-warning)' }}>
                   <span className="font-bold">{t('skills.validationWarnings')}:</span>{' '}
                   {editorValidation.warnings.map(issue => issue.message).join('; ')}
+                </div>
+              )}
+            </div>
+          )}
+          {!isEditing && duplicateOpen && (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-[minmax(140px,200px)_minmax(180px,1fr)_auto] gap-2 items-end">
+              <label className="text-[11px] uppercase" style={{ color: 'var(--hud-text-dim)' }}>
+                <span className="block mb-1">{t('skills.category')}</span>
+                <input
+                  value={duplicateCategory}
+                  onChange={event => setDuplicateCategory(event.target.value)}
+                  className="w-full px-2 py-1.5 text-[12px] outline-none"
+                  style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                />
+              </label>
+              <label className="text-[11px] uppercase" style={{ color: 'var(--hud-text-dim)' }}>
+                <span className="block mb-1">{t('skills.skillName')}</span>
+                <input
+                  value={duplicateName}
+                  onChange={event => setDuplicateName(event.target.value)}
+                  className="w-full px-2 py-1.5 text-[12px] outline-none"
+                  style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={submitDuplicate}
+                disabled={duplicateBusy || !duplicateCategory.trim() || !duplicateName.trim()}
+                className="px-2 py-1.5 text-[12px] cursor-pointer disabled:opacity-40"
+                style={{ color: 'var(--hud-bg-deep)', background: 'var(--hud-accent)', border: '1px solid var(--hud-accent)' }}
+              >
+                {duplicateBusy ? '...' : t('skills.duplicateSkill')}
+              </button>
+              {duplicateError && (
+                <div className="md:col-span-3 text-[12px]" style={{ color: 'var(--hud-error)' }}>
+                  {duplicateError}
                 </div>
               )}
             </div>
@@ -1700,6 +1804,7 @@ export default function SkillsPanel() {
   const [batchProgress, setBatchProgress] = useState<SkillBatchProgress | null>(null)
   const [batchResult, setBatchResult] = useState<BatchOperationResult | null>(null)
   const [batchRetryConfirming, setBatchRetryConfirming] = useState(false)
+  const [batchMoveCategory, setBatchMoveCategory] = useState('')
   const [confirmDeletePath, setConfirmDeletePath] = useState('')
   const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([])
   const [operationError, setOperationError] = useState('')
@@ -1869,6 +1974,7 @@ export default function SkillsPanel() {
   const runBatchAction = async (
     action: SkillBatchAction,
     skills: SkillInfo[],
+    targetCategory = batchMoveCategory,
   ) => {
     if (!skills.length) return
     setBatchBusy(true)
@@ -1906,18 +2012,26 @@ export default function SkillsPanel() {
               await deleteSkill(skill.path)
               return
             }
+            if (action === 'move') {
+              await moveSkill(skill.path, targetCategory)
+              return
+            }
             await toggleSkillEnabled(skill.name, action === 'enable')
           },
           setBatchProgress,
         )
       }
 
-      setBatchResult({ ...result, action })
+      setBatchResult({
+        ...result,
+        action,
+        targetCategory: action === 'move' ? targetCategory : undefined,
+      })
       if (action !== 'export') {
         const failedPaths = result.failed.map(failure => failure.item.path)
         setSelectedSkillPaths(failedPaths)
         if (
-          action === 'delete'
+          (action === 'delete' || action === 'move')
           && selectedSkillPath
           && result.succeeded.some(skill => skill.path === selectedSkillPath)
         ) {
@@ -1949,6 +2063,12 @@ export default function SkillsPanel() {
     await runBatchAction('delete', selectedSkills)
   }
 
+  const handleBatchMove = async () => {
+    if (!selectedSkills.length || !batchMoveCategory.trim()) return
+    if (!requestBatchConfirmation('move')) return
+    await runBatchAction('move', selectedSkills, batchMoveCategory.trim())
+  }
+
   const retryBatchFailures = async () => {
     if (!batchResult?.failed.length) return
     if (!batchRetryConfirming) {
@@ -1960,6 +2080,7 @@ export default function SkillsPanel() {
     await runBatchAction(
       batchResult.action,
       batchResult.failed.map(failure => failure.item),
+      batchResult.targetCategory,
     )
   }
 
@@ -1970,6 +2091,10 @@ export default function SkillsPanel() {
           path={selectedSkillPath}
           onClose={() => setSelectedSkillPath(null)}
           onChanged={refreshSkills}
+          onDuplicated={(path) => {
+            setSelectedSkillPath(path)
+            refreshSkills()
+          }}
         />
       )}
       {createOpen && (
@@ -2137,6 +2262,20 @@ export default function SkillsPanel() {
               </button>
               <button type="button" onClick={handleBatchExport} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
                 {batchConfirmAction === 'export' ? formatMessage(t('skills.batchConfirmExport'), { count: selectedSkills.length }) : t('skills.batchExport')}
+              </button>
+              <input
+                value={batchMoveCategory}
+                onChange={event => {
+                  setBatchMoveCategory(event.target.value)
+                  setBatchConfirmation(null)
+                }}
+                placeholder={t('skills.targetCategory')}
+                aria-label={t('skills.targetCategory')}
+                className="w-32 px-2 py-1 text-[12px] outline-none"
+                style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
+              />
+              <button type="button" onClick={handleBatchMove} disabled={!selectedSkills.length || !batchMoveCategory.trim() || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
+                {batchConfirmAction === 'move' ? formatMessage(t('skills.batchConfirmMove'), { count: selectedSkills.length }) : t('skills.batchMove')}
               </button>
               <button type="button" onClick={handleBatchDelete} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}>
                 {batchConfirmAction === 'delete' ? formatMessage(t('skills.batchConfirmDelete'), { count: selectedSkills.length }) : t('skills.batchDelete')}

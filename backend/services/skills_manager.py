@@ -437,6 +437,138 @@ def delete_skill(path: str, hermes_dir: str | None = None) -> dict[str, Any]:
     }
 
 
+def _tree_contains_symlink(root: Path) -> bool:
+    if root.is_symlink():
+        return True
+    for current, dirs, files in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        if any((current_path / name).is_symlink() for name in [*dirs, *files]):
+            return True
+    return False
+
+
+def _skill_destination(
+    skills_dir: Path,
+    category: str,
+    directory_name: str,
+) -> Path:
+    category = _validate_slug(category or "uncategorized", "category")
+    destination = skills_dir / category / directory_name
+    if not _path_is_under(destination.resolve(), skills_dir):
+        raise ValueError("skill destination is outside the Hermes skills directory")
+    return destination
+
+
+def move_skill(
+    path: str,
+    category: str,
+    hermes_dir: str | None = None,
+) -> dict[str, Any]:
+    skill_path, skills_dir = _resolve_skill_md(path, hermes_dir)
+    source_dir = _skill_dir_for_path(skill_path, skills_dir)
+    if _tree_contains_symlink(source_dir):
+        raise ValueError("skills containing symbolic links cannot be moved")
+    destination = _skill_destination(skills_dir, category, source_dir.name)
+    if destination == source_dir:
+        raise ValueError("skill is already in the target category")
+    if destination.exists():
+        raise FileExistsError("a skill already exists in the target category")
+
+    backup_path = _backup_directory(source_dir, skills_dir, "move")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source_dir), str(destination))
+    moved_path = destination / "SKILL.md"
+    clear_cache()
+    return {
+        "moved": True,
+        "path": str(moved_path),
+        "category": destination.parent.name,
+        "backup_path": str(backup_path),
+        "detail": read_skill_detail(str(moved_path), str(_hermes_path(hermes_dir))),
+    }
+
+
+def _content_with_skill_name(content: str, name: str) -> str:
+    match = re.match(
+        r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)",
+        content,
+        re.DOTALL,
+    )
+    metadata: dict[str, Any]
+    body = content
+    if match:
+        try:
+            parsed = yaml.safe_load(match.group(1)) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError("SKILL.md frontmatter is invalid") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("SKILL.md frontmatter must be a mapping")
+        metadata = parsed
+        body = content[match.end() :]
+    else:
+        metadata = {}
+    metadata["name"] = name
+    frontmatter = yaml.safe_dump(
+        metadata,
+        sort_keys=False,
+        allow_unicode=True,
+    ).strip()
+    return f"---\n{frontmatter}\n---\n{body}"
+
+
+def duplicate_skill(
+    path: str,
+    category: str,
+    name: str,
+    hermes_dir: str | None = None,
+) -> dict[str, Any]:
+    name = _validate_slug(name, "name")
+    skill_path, skills_dir = _resolve_skill_md(path, hermes_dir)
+    source_dir = _skill_dir_for_path(skill_path, skills_dir)
+    if _tree_contains_symlink(source_dir):
+        raise ValueError("skills containing symbolic links cannot be duplicated")
+    destination = _skill_destination(skills_dir, category, name)
+    if destination.exists():
+        raise FileExistsError("a skill already exists at the destination")
+
+    content = skill_path.read_text(encoding="utf-8")
+    duplicate_content = _content_with_skill_name(content, name)
+    available_files = {
+        file.relative_to(source_dir).as_posix()
+        for file in source_dir.rglob("*")
+        if file.is_file() and not file.is_symlink()
+    }
+    validation = validate_skill_content(
+        duplicate_content,
+        path=str(destination / "SKILL.md"),
+        hermes_dir=hermes_dir,
+        available_files=available_files,
+    )
+    if not validation["valid"]:
+        messages = "; ".join(item["message"] for item in validation["errors"])
+        raise ValueError(f"skill validation failed: {messages}")
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copytree(source_dir, destination)
+        _write_text_atomic(destination / "SKILL.md", duplicate_content)
+    except Exception:
+        if destination.exists():
+            shutil.rmtree(destination)
+        raise
+    duplicated_path = destination / "SKILL.md"
+    clear_cache()
+    return {
+        "duplicated": True,
+        "path": str(duplicated_path),
+        "category": destination.parent.name,
+        "detail": read_skill_detail(
+            str(duplicated_path),
+            str(_hermes_path(hermes_dir)),
+        ),
+    }
+
+
 def _path_is_under(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
