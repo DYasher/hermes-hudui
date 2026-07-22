@@ -13,13 +13,17 @@ from backend.collectors.skills import (
 from backend.services.skills_manager import (
     backup_skills_bytes,
     create_skill,
+    create_skills_backup,
     delete_skill,
+    delete_skills_backup,
     duplicate_skill,
     export_skills_bytes,
     import_skills_zip_bytes,
     install_market_skill,
+    list_skills_backups,
     move_skill,
     preview_skills_zip_bytes,
+    read_skills_backup,
     save_skill_content,
     search_skill_market,
     set_skill_enabled,
@@ -246,6 +250,53 @@ async def backup_skills():
             "Content-Disposition": 'attachment; filename="hermes-skills-backup.zip"'
         },
     )
+
+
+@router.post("/skills/backups")
+async def create_skills_backup_endpoint():
+    result = await run_in_threadpool(create_skills_backup)
+    payload = await run_in_threadpool(read_skills_backup, result["filename"])
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{result["filename"]}"'
+            )
+        },
+    )
+
+
+@router.get("/skills/backups")
+async def get_skills_backups():
+    return to_dict(await run_in_threadpool(list_skills_backups))
+
+
+@router.get("/skills/backups/{filename}")
+async def download_skills_backup(filename: str):
+    try:
+        payload = await run_in_threadpool(read_skills_backup, filename)
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            },
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/skills/backups/{filename}")
+async def delete_skills_backup_endpoint(filename: str):
+    try:
+        return to_dict(await run_in_threadpool(delete_skills_backup, filename))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/skills/export")

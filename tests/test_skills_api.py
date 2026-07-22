@@ -48,6 +48,10 @@ def test_skill_management_routes_are_registered(registered_routes) -> None:
     assert ("POST", "/api/skills/toggle") in registered_routes
     assert ("DELETE", "/api/skills") in registered_routes
     assert ("GET", "/api/skills/backup") in registered_routes
+    assert ("POST", "/api/skills/backups") in registered_routes
+    assert ("GET", "/api/skills/backups") in registered_routes
+    assert ("GET", "/api/skills/backups/{filename}") in registered_routes
+    assert ("DELETE", "/api/skills/backups/{filename}") in registered_routes
     assert ("POST", "/api/skills/export") in registered_routes
     assert ("POST", "/api/skills/validate") in registered_routes
     assert ("POST", "/api/skills/move") in registered_routes
@@ -1115,6 +1119,50 @@ def test_backup_skills_bytes_supports_symlinked_hermes_home(
             "hermes-skills-backup/skills/research/linked-helper/SKILL.md"
             in archive.namelist()
         )
+
+
+def test_skill_backup_history_creates_lists_reads_and_deletes_archives(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill = hermes_home / "skills" / "research" / "history" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# History\n", encoding="utf-8")
+
+    first = skills_manager.create_skills_backup()
+    second = skills_manager.create_skills_backup()
+    history = skills_manager.list_skills_backups()
+
+    assert first["filename"].endswith(".zip")
+    assert [item["filename"] for item in history["items"]] == [
+        second["filename"],
+        first["filename"],
+    ]
+    archive_path = Path(first["path"])
+    assert archive_path.is_file()
+    with pytest.raises(ValueError):
+        archive_path.resolve().relative_to(hermes_home.resolve())
+
+    payload = skills_manager.read_skills_backup(first["filename"])
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert (
+            "hermes-skills-backup/skills/research/history/SKILL.md"
+            in archive.namelist()
+        )
+
+    deleted = skills_manager.delete_skills_backup(first["filename"])
+    assert deleted == {"deleted": True, "filename": first["filename"]}
+    assert not archive_path.exists()
+
+
+def test_skill_backup_history_rejects_unsafe_filenames(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    with pytest.raises(ValueError, match="invalid backup filename"):
+        skills_manager.read_skills_backup("../config.yaml")
+    with pytest.raises(ValueError, match="invalid backup filename"):
+        skills_manager.delete_skills_backup("other.zip")
 
 
 def test_backup_zip_can_be_previewed_and_restored_with_existing_import_flow(

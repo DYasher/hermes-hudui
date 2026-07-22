@@ -63,11 +63,11 @@
 
 ### 任务 5：备份历史管理
 
-- [ ] 测试创建持久化 ZIP、按时间倒序列出、读取下载和删除；文件名必须由服务生成并拒绝路径穿越。
-- [ ] 新增 `POST/GET /api/skills/backups` 和 `GET/DELETE /api/skills/backups/{filename}`。
-- [ ] 将“备份 Skills”改为创建并下载持久备份；新增备份历史弹窗，支持下载和二次确认删除。
-- [ ] 运行测试和构建。
-- [ ] 提交 `feat: manage skill backup history`。
+- [x] 测试创建持久化 ZIP、按时间倒序列出、读取下载和删除；文件名必须由服务生成并拒绝路径穿越。
+- [x] 新增 `POST/GET /api/skills/backups` 和 `GET/DELETE /api/skills/backups/{filename}`。
+- [x] 将“备份 Skills”改为创建并下载持久备份；新增备份历史弹窗，支持下载和二次确认删除。
+- [x] 运行测试和构建。
+- [x] 提交 `feat: manage skill backup history`。
 
 ### 任务 6：Skill 文件树
 

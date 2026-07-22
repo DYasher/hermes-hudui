@@ -97,6 +97,11 @@ type SkillImportResult = {
   installed_count: number
   items: SkillImportItem[]
 }
+type SkillBackupItem = {
+  filename: string
+  size: number
+  created_at: string
+}
 type BatchOperationResult = SkillBatchResult<SkillInfo> & {
   action: SkillBatchAction
   targetCategory?: string
@@ -422,23 +427,52 @@ function isZipArchiveFile(file: File) {
   return file.name.toLowerCase().endsWith('.zip')
 }
 
+function downloadBlobResponse(res: Response, fallbackFilename: string) {
+  return res.blob().then(blob => {
+    const disposition = res.headers.get('Content-Disposition') || ''
+    const headerFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = headerFilename || fallbackFilename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  })
+}
+
 async function downloadSkillsBackup() {
-  const res = await fetch('/api/skills/backup')
+  const res = await fetch('/api/skills/backups', { method: 'POST' })
   if (!res.ok) {
     const payload = await res.json().catch(() => null)
     const detail = payload?.detail || payload?.message || res.statusText
     throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
   }
+  await downloadBlobResponse(res, 'hermes-skills-backup.zip')
+}
 
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'hermes-skills-backup.zip'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
+async function listSkillsBackups(): Promise<SkillBackupItem[]> {
+  const res = await fetch('/api/skills/backups')
+  const payload = await readJsonResponse(res)
+  return payload?.items || []
+}
+
+async function downloadSkillsBackupFile(filename: string) {
+  const res = await fetch(`/api/skills/backups/${encodeURIComponent(filename)}`)
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null)
+    const detail = payload?.detail || payload?.message || res.statusText
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+  await downloadBlobResponse(res, filename)
+}
+
+async function deleteSkillsBackup(filename: string) {
+  const res = await fetch(`/api/skills/backups/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+  })
+  return readJsonResponse(res)
 }
 
 async function downloadSelectedSkills(paths: string[]) {
@@ -1644,6 +1678,104 @@ function SkillImportModal({
   )
 }
 
+function SkillBackupHistoryModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation()
+  const [items, setItems] = useState<SkillBackupItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyFilename, setBusyFilename] = useState('')
+  const [deleteConfirming, setDeleteConfirming] = useState('')
+  const [error, setError] = useState('')
+
+  const loadBackups = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      setItems(await listSkillsBackups())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadBackups()
+  }, [loadBackups])
+
+  const downloadItem = async (item: SkillBackupItem) => {
+    setBusyFilename(item.filename)
+    setDeleteConfirming('')
+    setError('')
+    try {
+      await downloadSkillsBackupFile(item.filename)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusyFilename('')
+    }
+  }
+
+  const deleteItem = async (item: SkillBackupItem) => {
+    if (deleteConfirming !== item.filename) {
+      setDeleteConfirming(item.filename)
+      return
+    }
+    setBusyFilename(item.filename)
+    setError('')
+    try {
+      await deleteSkillsBackup(item.filename)
+      setDeleteConfirming('')
+      await loadBackups()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusyFilename('')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.72)' }} role="dialog" aria-modal="true">
+      <div className="w-full max-w-3xl max-h-[88vh] min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--hud-solid-block)', border: '1px solid var(--hud-border)' }}>
+        <div className="shrink-0 px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--hud-border)' }}>
+          <div className="text-[15px] font-bold" style={{ color: 'var(--hud-primary)' }}>{t('skills.backupHistory')}</div>
+          <button type="button" onClick={onClose} className="px-2 py-1 text-[13px] cursor-pointer" style={{ color: 'var(--hud-text-dim)', border: '1px solid var(--hud-border)' }}>
+            x {t('skills.close')}
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
+          {loading && <div className="text-[13px] animate-pulse" style={{ color: 'var(--hud-text-dim)' }}>...</div>}
+          {error && <div className="text-[12px] break-words" style={{ color: 'var(--hud-error)' }}>{error}</div>}
+          {!loading && items.map(item => {
+            const busy = busyFilename === item.filename
+            return (
+              <div key={item.filename} className="flex flex-wrap items-center justify-between gap-3 border p-3" style={{ borderColor: 'var(--hud-border)' }}>
+                <div className="min-w-0">
+                  <div className="break-all font-mono text-[12px]" style={{ color: 'var(--hud-text)' }}>{item.filename}</div>
+                  <div className="mt-1 flex flex-wrap gap-3 text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+                    <span>{formatSize(item.size)}</span>
+                    <span>{new Date(item.created_at).toLocaleString()}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button type="button" onClick={() => downloadItem(item)} disabled={busy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
+                    {t('skills.downloadBackup')}
+                  </button>
+                  <button type="button" onClick={() => deleteItem(item)} disabled={busy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}>
+                    {deleteConfirming === item.filename ? t('skills.confirmDeleteBackup') : t('skills.deleteBackup')}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          {!loading && items.length === 0 && (
+            <div className="text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.noBackups')}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SkillMarketModal({
   onClose,
   onInstalled,
@@ -1816,6 +1948,7 @@ export default function SkillsPanel() {
   const [createOpen, setCreateOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [restoreOpen, setRestoreOpen] = useState(false)
+  const [backupHistoryOpen, setBackupHistoryOpen] = useState(false)
   const [marketOpen, setMarketOpen] = useState(false)
   const [busySkillPath, setBusySkillPath] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
@@ -2145,6 +2278,9 @@ export default function SkillsPanel() {
           onInstalled={refreshSkills}
         />
       )}
+      {backupHistoryOpen && (
+        <SkillBackupHistoryModal onClose={() => setBackupHistoryOpen(false)} />
+      )}
 
       <div className="skills-panel-root col-span-full h-full min-h-0 grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2">
         <Panel title={t('dashboard.skillLibrary')} className="h-full min-h-0" noPadding>
@@ -2172,6 +2308,9 @@ export default function SkillsPanel() {
               </button>
               <button type="button" onClick={handleBackup} disabled={backupBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
                 {backupBusy ? '...' : t('skills.backup')}
+              </button>
+              <button type="button" onClick={() => setBackupHistoryOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
+                {t('skills.backupHistory')}
               </button>
               <button type="button" onClick={() => setMarketOpen(true)} className="px-2 py-1 text-[12px] cursor-pointer" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
                 {t('skills.skillMarket')}

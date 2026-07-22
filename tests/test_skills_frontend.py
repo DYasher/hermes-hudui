@@ -311,13 +311,27 @@ def test_skills_panel_exposes_search_filters_and_backup_restore_actions() -> Non
     assert "skills.statusFilter" in panel
     assert "skills.typeFilter" in panel
     assert "downloadSkillsBackup" in panel
-    assert "fetch('/api/skills/backup')" in panel
+    assert "fetch('/api/skills/backups', { method: 'POST' })" in panel
     assert "skills.backup" in panel
     assert "mode?: 'import' | 'restore'" in panel
     assert "mode === 'restore'" in panel
     assert "skills.restoreSkills" in panel
     assert "skills.previewRestore" in panel
     assert "skills.confirmRestore" in panel
+
+
+def test_skills_panel_manages_persistent_backup_history() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "type SkillBackupItem" in panel
+    assert "SkillBackupHistoryModal" in panel
+    assert "fetch('/api/skills/backups', { method: 'POST' })" in panel
+    assert "fetch('/api/skills/backups')" in panel
+    assert "downloadSkillsBackupFile" in panel
+    assert "deleteSkillsBackup" in panel
+    assert "deleteConfirming === item.filename" in panel
+    assert "skills.backupHistory" in panel
+    assert "skills.confirmDeleteBackup" in panel
 
 
 def test_skills_filters_use_theme_aware_translucent_popovers() -> None:
@@ -500,6 +514,8 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.updateSkill': 'Update'" in translations
     assert "'skills.localVersion': 'Local {version}'" in translations
     assert "'skills.marketVersion': 'Market {version}'" in translations
+    assert "'skills.backupHistory': 'Backup history'" in translations
+    assert "'skills.confirmDeleteBackup': 'Confirm delete'" in translations
     assert "'skills.category.data-science.label': 'Data Science'" in translations
     assert "'skills.category.data-science.description': 'Analysis, notebooks, datasets, and data workflows.'" in translations
     assert "'skills.original': '原文'" in translations
@@ -568,5 +584,7 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.updateSkill': '一键更新'" in translations
     assert "'skills.localVersion': '本地 {version}'" in translations
     assert "'skills.marketVersion': '市场 {version}'" in translations
+    assert "'skills.backupHistory': '备份历史'" in translations
+    assert "'skills.confirmDeleteBackup': '确认删除'" in translations
     assert "'skills.category.data-science.label': '数据科学'" in translations
     assert "'skills.category.data-science.description': '数据分析、Notebook、数据集和数据处理流程。'" in translations

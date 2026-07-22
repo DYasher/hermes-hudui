@@ -56,6 +56,9 @@ _SKILL_SCAN_EXCLUDED_DIRS = {
 }
 _SKILL_SUPPORT_DIRS = {"references", "templates", "assets", "scripts"}
 _MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+_BACKUP_ARCHIVE_NAME = re.compile(
+    r"^hermes-skills-backup-\d{8}-\d{6}-\d{6}\.zip$"
+)
 
 
 def _hermes_path(hermes_dir: str | None = None) -> Path:
@@ -80,6 +83,10 @@ def _backup_root() -> Path:
     if override:
         return Path(override).expanduser()
     return _cache_base() / "hermes-hudui" / "skill-backups"
+
+
+def _backup_archive_root() -> Path:
+    return _backup_root() / "archives"
 
 
 def _backup_stamp() -> str:
@@ -800,6 +807,87 @@ def backup_skills_bytes(hermes_dir: str | None = None) -> bytes:
     skill_roots = _indexed_skill_roots(skills_dir, hermes_dir)
     discovered_roots = _discover_skill_roots(skills_dir)
     return _build_skills_zip(skill_roots, discovered_roots, skills_dir)
+
+
+def _backup_archive_metadata(path: Path) -> dict[str, Any]:
+    stat_result = path.stat()
+    return {
+        "filename": path.name,
+        "size": stat_result.st_size,
+        "created_at": datetime.fromtimestamp(stat_result.st_mtime)
+        .astimezone()
+        .isoformat(),
+    }
+
+
+def _resolve_backup_archive(filename: str) -> Path:
+    filename = str(filename or "").strip()
+    if not _BACKUP_ARCHIVE_NAME.fullmatch(filename):
+        raise ValueError("invalid backup filename")
+    root = _backup_archive_root().resolve()
+    path = root / filename
+    if not _path_is_under(path.resolve(), root):
+        raise ValueError("invalid backup filename")
+    return path
+
+
+def create_skills_backup(hermes_dir: str | None = None) -> dict[str, Any]:
+    payload = backup_skills_bytes(hermes_dir)
+    root = _backup_archive_root()
+    root.mkdir(parents=True, exist_ok=True)
+    filename = f"hermes-skills-backup-{_backup_stamp()}.zip"
+    destination = root / filename
+    with tempfile.NamedTemporaryFile(
+        "wb",
+        dir=root,
+        prefix=".skills-backup-",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(payload)
+    try:
+        temporary.replace(destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+    return {
+        **_backup_archive_metadata(destination),
+        "path": str(destination),
+    }
+
+
+def list_skills_backups() -> dict[str, Any]:
+    root = _backup_archive_root()
+    if not root.is_dir():
+        return {"items": []}
+    archives = [
+        path
+        for path in root.iterdir()
+        if _BACKUP_ARCHIVE_NAME.fullmatch(path.name)
+        and path.is_file()
+        and not path.is_symlink()
+    ]
+    archives.sort(
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+        reverse=True,
+    )
+    return {"items": [_backup_archive_metadata(path) for path in archives]}
+
+
+def read_skills_backup(filename: str) -> bytes:
+    path = _resolve_backup_archive(filename)
+    if path.is_symlink() or not path.is_file():
+        raise FileNotFoundError("skill backup not found")
+    return path.read_bytes()
+
+
+def delete_skills_backup(filename: str) -> dict[str, Any]:
+    path = _resolve_backup_archive(filename)
+    if path.is_symlink() or not path.is_file():
+        raise FileNotFoundError("skill backup not found")
+    path.unlink()
+    return {"deleted": True, "filename": path.name}
 
 
 def export_skills_bytes(
