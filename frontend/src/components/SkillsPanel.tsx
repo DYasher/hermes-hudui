@@ -5,10 +5,17 @@ import rehypeHighlight from 'rehype-highlight'
 import { useApi } from '../hooks/useApi'
 import Panel from './Panel'
 import { timeAgo, formatSize } from '../lib/utils'
+import {
+  resolveBatchConfirmation,
+  runSkillBatch,
+  type PendingBatchConfirmation,
+  type SkillBatchAction,
+  type SkillBatchProgress,
+  type SkillBatchResult,
+} from '../lib/skillBatch'
 import { useTranslation, type TranslationKey } from '../i18n'
 
 type TranslationMode = 'side-by-side' | 'original' | 'translation'
-type BatchConfirmAction = 'enable' | 'disable' | 'export' | 'delete' | null
 type SkillTranslationProvider = {
   id: string
   name: string
@@ -74,6 +81,9 @@ type SkillImportResult = {
   filename: string
   installed_count: number
   items: SkillImportItem[]
+}
+type BatchOperationResult = SkillBatchResult<SkillInfo> & {
+  action: SkillBatchAction
 }
 
 const TRANSLATION_PROVIDER_STORAGE_KEY = 'hud-skill-translation-provider'
@@ -203,6 +213,13 @@ function storeValue(key: string, value: string) {
   } catch {
     // Local storage can be unavailable in private or embedded contexts.
   }
+}
+
+function formatMessage(template: string, values: Record<string, string | number>) {
+  return Object.entries(values).reduce(
+    (message, [key, value]) => message.replace(`{${key}}`, String(value)),
+    template,
+  )
 }
 
 function SkillFilterSelect({
@@ -1592,7 +1609,10 @@ export default function SkillsPanel() {
   const [busySkillPath, setBusySkillPath] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [batchBusy, setBatchBusy] = useState(false)
-  const [batchConfirmAction, setBatchConfirmAction] = useState<BatchConfirmAction>(null)
+  const [batchConfirmation, setBatchConfirmation] = useState<PendingBatchConfirmation | null>(null)
+  const [batchProgress, setBatchProgress] = useState<SkillBatchProgress | null>(null)
+  const [batchResult, setBatchResult] = useState<BatchOperationResult | null>(null)
+  const [batchRetryConfirming, setBatchRetryConfirming] = useState(false)
   const [confirmDeletePath, setConfirmDeletePath] = useState('')
   const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([])
   const [operationError, setOperationError] = useState('')
@@ -1601,7 +1621,8 @@ export default function SkillsPanel() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'custom' | 'builtin'>('all')
 
   useEffect(() => {
-    setBatchConfirmAction(null)
+    setBatchConfirmation(null)
+    setBatchRetryConfirming(false)
   }, [selectedCat, searchQuery, statusFilter, typeFilter])
 
   const refreshSkills = useCallback(async () => {
@@ -1624,7 +1645,7 @@ export default function SkillsPanel() {
     setBusySkillPath(skill.path)
     setOperationError('')
     setConfirmDeletePath('')
-    setBatchConfirmAction(null)
+    setBatchConfirmation(null)
     try {
       await toggleSkillEnabled(skill.name, skill.enabled === false)
       await refreshSkills()
@@ -1638,7 +1659,7 @@ export default function SkillsPanel() {
   const handleDeleteSkill = async (skill: SkillInfo) => {
     if (confirmDeletePath !== skill.path) {
       setConfirmDeletePath(skill.path)
-      setBatchConfirmAction(null)
+      setBatchConfirmation(null)
       return
     }
     setBusySkillPath(skill.path)
@@ -1657,7 +1678,8 @@ export default function SkillsPanel() {
   }
 
   const toggleSelectSkill = (skill: SkillInfo, selected: boolean) => {
-    setBatchConfirmAction(null)
+    setBatchConfirmation(null)
+    setBatchRetryConfirming(false)
     setSelectedSkillPaths(current => {
       if (selected) {
         return current.includes(skill.path) ? current : [...current, skill.path]
@@ -1668,7 +1690,8 @@ export default function SkillsPanel() {
 
   const clearBatchSelection = () => {
     setSelectedSkillPaths([])
-    setBatchConfirmAction(null)
+    setBatchConfirmation(null)
+    setBatchRetryConfirming(false)
   }
 
   // Only show loading on initial load
@@ -1720,12 +1743,17 @@ export default function SkillsPanel() {
     || typeFilter !== 'all'
   const visibleSkills = selectedCat || hasListFilters ? filteredSkills : recentlyMod
   const selectedSkills = visibleSkills.filter(skill => selectedSkillPaths.includes(skill.path))
+  const selectedSkillsKey = selectedSkills.map(skill => skill.path).sort().join('\n')
+  const batchConfirmAction = batchConfirmation?.selectionKey === selectedSkillsKey
+    ? batchConfirmation.action
+    : null
   const selectedCategoryDisplay = selectedCat ? getSkillCategoryDisplay(selectedCat, t) : null
   const selectedCountLabel = t('skills.selectedCount').replace('{count}', String(selectedSkills.length))
 
   const selectAllVisible = () => {
     setSelectedSkillPaths(visibleSkills.map(skill => skill.path))
-    setBatchConfirmAction(null)
+    setBatchConfirmation(null)
+    setBatchRetryConfirming(false)
   }
 
   const allVisibleSelected = visibleSkills.length > 0
@@ -1739,70 +1767,113 @@ export default function SkillsPanel() {
     selectAllVisible()
   }
 
-  const requestBatchConfirmation = (action: Exclude<BatchConfirmAction, null>) => {
-    if (batchConfirmAction === action) {
-      setBatchConfirmAction(null)
-      return true
-    }
-    setBatchConfirmAction(action)
+  const requestBatchConfirmation = (action: SkillBatchAction) => {
+    const confirmation = resolveBatchConfirmation(
+      batchConfirmation,
+      action,
+      selectedSkillsKey,
+    )
+    setBatchConfirmation(confirmation.next)
     setConfirmDeletePath('')
-    return false
+    setBatchRetryConfirming(false)
+    return confirmation.confirmed
+  }
+
+  const runBatchAction = async (
+    action: SkillBatchAction,
+    skills: SkillInfo[],
+  ) => {
+    if (!skills.length) return
+    setBatchBusy(true)
+    setBatchProgress({ completed: 0, total: skills.length })
+    setBatchResult(null)
+    setBatchRetryConfirming(false)
+    setOperationError('')
+    setConfirmDeletePath('')
+    try {
+      let result: SkillBatchResult<SkillInfo>
+      if (action === 'export') {
+        try {
+          await downloadSelectedSkills(skills.map(skill => skill.path))
+          result = {
+            completed: skills.length,
+            total: skills.length,
+            succeeded: skills,
+            failed: [],
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          result = {
+            completed: skills.length,
+            total: skills.length,
+            succeeded: [],
+            failed: skills.map(item => ({ item, message })),
+          }
+        }
+        setBatchProgress({ completed: skills.length, total: skills.length })
+      } else {
+        result = await runSkillBatch(
+          skills,
+          async skill => {
+            if (action === 'delete') {
+              await deleteSkill(skill.path)
+              return
+            }
+            await toggleSkillEnabled(skill.name, action === 'enable')
+          },
+          setBatchProgress,
+        )
+      }
+
+      setBatchResult({ ...result, action })
+      if (action !== 'export') {
+        const failedPaths = result.failed.map(failure => failure.item.path)
+        setSelectedSkillPaths(failedPaths)
+        if (
+          action === 'delete'
+          && selectedSkillPath
+          && result.succeeded.some(skill => skill.path === selectedSkillPath)
+        ) {
+          setSelectedSkillPath(null)
+        }
+        await refreshSkills()
+      }
+    } finally {
+      setBatchBusy(false)
+    }
   }
 
   const handleBatchSetEnabled = async (enabled: boolean) => {
     if (!selectedSkills.length) return
-    if (!requestBatchConfirmation(enabled ? 'enable' : 'disable')) return
-    setBatchBusy(true)
-    setOperationError('')
-    setConfirmDeletePath('')
-    try {
-      for (const skill of selectedSkills) {
-        await toggleSkillEnabled(skill.name, enabled)
-      }
-      clearBatchSelection()
-      await refreshSkills()
-    } catch (err) {
-      setOperationError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBatchBusy(false)
-    }
+    const action = enabled ? 'enable' : 'disable'
+    if (!requestBatchConfirmation(action)) return
+    await runBatchAction(action, selectedSkills)
   }
 
   const handleBatchExport = async () => {
     if (!selectedSkills.length) return
     if (!requestBatchConfirmation('export')) return
-    setBatchBusy(true)
-    setOperationError('')
-    setConfirmDeletePath('')
-    try {
-      await downloadSelectedSkills(selectedSkills.map(skill => skill.path))
-    } catch (err) {
-      setOperationError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBatchBusy(false)
-    }
+    await runBatchAction('export', selectedSkills)
   }
 
   const handleBatchDelete = async () => {
     if (!selectedSkills.length) return
     if (!requestBatchConfirmation('delete')) return
-    setBatchBusy(true)
-    setOperationError('')
-    try {
-      const deletingPaths = selectedSkills.map(skill => skill.path)
-      for (const skill of selectedSkills) {
-        await deleteSkill(skill.path)
-      }
-      if (selectedSkillPath && deletingPaths.includes(selectedSkillPath)) {
-        setSelectedSkillPath(null)
-      }
-      clearBatchSelection()
-      await refreshSkills()
-    } catch (err) {
-      setOperationError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBatchBusy(false)
+    await runBatchAction('delete', selectedSkills)
+  }
+
+  const retryBatchFailures = async () => {
+    if (!batchResult?.failed.length) return
+    if (!batchRetryConfirming) {
+      setBatchRetryConfirming(true)
+      setBatchConfirmation(null)
+      return
     }
+    setBatchRetryConfirming(false)
+    await runBatchAction(
+      batchResult.action,
+      batchResult.failed.map(failure => failure.item),
+    )
   }
 
   return (
@@ -1972,18 +2043,51 @@ export default function SkillsPanel() {
                 {allVisibleSelected ? t('skills.deselectAllVisible') : t('skills.selectAllVisible')}
               </button>
               <button type="button" onClick={() => handleBatchSetEnabled(true)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
-                {batchConfirmAction === 'enable' ? t('skills.batchConfirmEnable') : t('skills.batchEnable')}
+                {batchConfirmAction === 'enable' ? formatMessage(t('skills.batchConfirmEnable'), { count: selectedSkills.length }) : t('skills.batchEnable')}
               </button>
               <button type="button" onClick={() => handleBatchSetEnabled(false)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}>
-                {batchConfirmAction === 'disable' ? t('skills.batchConfirmDisable') : t('skills.batchDisable')}
+                {batchConfirmAction === 'disable' ? formatMessage(t('skills.batchConfirmDisable'), { count: selectedSkills.length }) : t('skills.batchDisable')}
               </button>
               <button type="button" onClick={handleBatchExport} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
-                {batchConfirmAction === 'export' ? t('skills.batchConfirmExport') : t('skills.batchExport')}
+                {batchConfirmAction === 'export' ? formatMessage(t('skills.batchConfirmExport'), { count: selectedSkills.length }) : t('skills.batchExport')}
               </button>
               <button type="button" onClick={handleBatchDelete} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}>
-                {batchConfirmAction === 'delete' ? t('skills.batchConfirmDelete') : t('skills.batchDelete')}
+                {batchConfirmAction === 'delete' ? formatMessage(t('skills.batchConfirmDelete'), { count: selectedSkills.length }) : t('skills.batchDelete')}
               </button>
             </div>
+            {batchBusy && batchProgress && (
+              <div className="mt-2 text-[12px]" style={{ color: 'var(--hud-accent)' }}>
+                {formatMessage(t('skills.batchProgress'), batchProgress)}
+              </div>
+            )}
+            {!batchBusy && batchResult && (
+              <div className="mt-2 border-t pt-2 text-[12px]" style={{ borderColor: 'var(--hud-border)' }}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span style={{ color: 'var(--hud-primary)' }}>
+                    {formatMessage(t('skills.batchSucceeded'), { count: batchResult.succeeded.length })}
+                  </span>
+                  <span style={{ color: batchResult.failed.length ? 'var(--hud-error)' : 'var(--hud-text-dim)' }}>
+                    {formatMessage(t('skills.batchFailed'), { count: batchResult.failed.length })}
+                  </span>
+                  {batchResult.failed.length > 0 && (
+                    <button type="button" onClick={retryBatchFailures} className="px-2 py-1 cursor-pointer" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}>
+                      {batchRetryConfirming
+                        ? formatMessage(t('skills.confirmRetryFailed'), { count: batchResult.failed.length })
+                        : t('skills.retryFailed')}
+                    </button>
+                  )}
+                </div>
+                {batchResult.failed.length > 0 && (
+                  <div className="mt-2 max-h-24 overflow-y-auto space-y-1 font-mono" style={{ color: 'var(--hud-error)' }}>
+                    {batchResult.failed.map(failure => (
+                      <div key={failure.item.path} className="break-words">
+                        {failure.item.name}: {failure.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="skill-list-scroll flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
             {visibleSkills.map((skill: SkillInfo) => (

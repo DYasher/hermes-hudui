@@ -25,13 +25,13 @@
 
 ### 任务 1：批量任务状态和自动化测试
 
-- [ ] 新建 `skillBatch.test.ts`，测试第一次请求只进入确认、第二次同操作才通过、切换操作替换确认、重置返回空状态。
-- [ ] 运行 `npm test`，确认因模块缺失失败。
-- [ ] 实现 `resolveBatchConfirmation()` 和 `runSkillBatch()`；执行器逐项调用操作，持续报告 `completed/total`，捕获单项错误并继续。
-- [ ] 将批量启用、禁用、删除接入执行器；导出保持单请求，但使用同一进度/结果结构。
-- [ ] 在批量栏显示进度、成功数、失败项和“重试失败项”；二次确认显示选中数量。
-- [ ] 运行 `npm test`、Skills 前端测试和生产构建。
-- [ ] 提交 `feat: report batch skill operation results`。
+- [x] 新建 `skillBatch.test.ts`，测试第一次请求只进入确认、第二次同操作才通过、切换操作替换确认、重置返回空状态。
+- [x] 运行 `npm test`，确认因模块缺失失败。
+- [x] 实现 `resolveBatchConfirmation()` 和 `runSkillBatch()`；执行器逐项调用操作，持续报告 `completed/total`，捕获单项错误并继续。
+- [x] 将批量启用、禁用、删除接入执行器；导出保持单请求，但使用同一进度/结果结构。
+- [x] 在批量栏显示进度、成功数、失败项和“重试失败项”；二次确认显示选中数量。
+- [x] 运行 `npm test`、Skills 前端测试和生产构建。
+- [x] 提交 `feat: report batch skill operation results`。
 
 ### 任务 2：Skill 完整性检查
 
