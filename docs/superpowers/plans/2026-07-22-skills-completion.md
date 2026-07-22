@@ -79,9 +79,9 @@
 
 ### 任务 7：完整验收与收尾
 
-- [ ] 运行 `.venv/bin/pytest -q`，要求 0 failed。
-- [ ] 运行 `npm test` 和 `npm run build`，要求退出码 0。
-- [ ] 将 `frontend/dist` 同步到 `backend/static`，确认哈希文件一致。
-- [ ] 在 `http://127.0.0.1:3002` 验证批量失败继续/重试、移动、复制、市场更新状态、备份历史、校验结果和文件树内部滚动。
-- [ ] 执行最终代码审查，修复所有 Critical/Important 问题。
-- [ ] 推送全部提交到 `origin/main`，确认工作区干净并记录最终提交。
+- [x] 运行 `.venv/bin/pytest -q`，要求 0 failed。
+- [x] 运行 `npm test` 和 `npm run build`，要求退出码 0。
+- [x] 将 `frontend/dist` 同步到 `backend/static`，确认哈希文件一致。
+- [x] 在 `http://127.0.0.1:3002` 验证批量失败继续/重试、移动、复制、市场更新状态、备份历史、校验结果和文件树内部滚动。
+- [x] 执行最终代码审查，修复所有 Critical/Important 问题。
+- [x] 推送全部提交到 `origin/main`，确认工作区干净并记录最终提交。

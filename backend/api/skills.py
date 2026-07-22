@@ -181,6 +181,8 @@ async def save_skill_detail(request: SkillSaveRequest):
 
 @router.post("/skills/validate")
 async def validate_skill(request: SkillValidateRequest):
+    if request.path is not None and read_skill_detail(request.path) is None:
+        raise HTTPException(status_code=404, detail="Skill not found")
     try:
         result = await run_in_threadpool(
             validate_skill_content,

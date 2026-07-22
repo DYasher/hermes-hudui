@@ -692,6 +692,23 @@ def test_validate_skill_content_rejects_malformed_frontmatter() -> None:
     assert result["errors"][0]["code"] == "invalid_frontmatter"
 
 
+def test_validate_skill_endpoint_rejects_paths_outside_skills(
+    hermes_home: Path,
+) -> None:
+    outside = hermes_home / "outside" / "SKILL.md"
+    outside.parent.mkdir(parents=True)
+    outside.write_text("# Outside\n", encoding="utf-8")
+
+    request = skills_api.SkillValidateRequest(
+        path=str(outside),
+        content="# Outside\n",
+    )
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(skills_api.validate_skill(request))
+
+    assert exc.value.status_code == 404
+
+
 def test_save_skill_content_blocks_validation_errors_without_writing(
     hermes_home: Path,
 ) -> None:
