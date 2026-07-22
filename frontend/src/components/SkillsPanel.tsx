@@ -102,6 +102,12 @@ type SkillBackupItem = {
   size: number
   created_at: string
 }
+type SkillFileItem = {
+  path: string
+  name: string
+  kind: 'references' | 'scripts' | 'assets' | 'templates' | 'other'
+  size: number
+}
 type BatchOperationResult = SkillBatchResult<SkillInfo> & {
   action: SkillBatchAction
   targetCategory?: string
@@ -782,6 +788,44 @@ function MarkdownPane({
   )
 }
 
+function SkillSupportFileTree({ path }: { path: string }) {
+  const { t } = useTranslation()
+  const { data, isLoading, error } = useApi<{ items: SkillFileItem[] }>(
+    `/skills/files?path=${encodeURIComponent(path)}`,
+    0,
+  )
+  const items = data?.items || []
+  const kindLabel = (kind: SkillFileItem['kind']) => {
+    if (kind === 'references') return t('skills.fileKindReferences')
+    if (kind === 'scripts') return t('skills.fileKindScripts')
+    if (kind === 'assets') return t('skills.fileKindAssets')
+    if (kind === 'templates') return t('skills.fileKindTemplates')
+    return t('skills.fileKindOther')
+  }
+
+  return (
+    <details className="mt-2 text-[11px]" data-skill-support-files>
+      <summary className="cursor-pointer select-none" style={{ color: 'var(--hud-accent)' }}>
+        {t('skills.supportFiles')} ({items.length})
+      </summary>
+      <div className="mt-1 max-h-28 overflow-y-auto border" style={{ borderColor: 'var(--hud-border)' }}>
+        {isLoading && <div className="px-2 py-1.5 animate-pulse" style={{ color: 'var(--hud-text-dim)' }}>...</div>}
+        {error && <div className="px-2 py-1.5" style={{ color: 'var(--hud-error)' }}>{t('skills.filesUnavailable')}</div>}
+        {!isLoading && !error && items.map(item => (
+          <div key={item.path} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1 border-b last:border-b-0" style={{ borderColor: 'var(--hud-border)' }}>
+            <span className="px-1" style={{ color: 'var(--hud-accent)', background: 'var(--hud-bg-hover)' }}>{kindLabel(item.kind)}</span>
+            <span className="min-w-0 truncate font-mono" title={item.path} style={{ color: 'var(--hud-text)' }}>{item.path}</span>
+            <span style={{ color: 'var(--hud-text-dim)' }}>{formatSize(item.size)}</span>
+          </div>
+        ))}
+        {!isLoading && !error && items.length === 0 && (
+          <div className="px-2 py-1.5" style={{ color: 'var(--hud-text-dim)' }}>{t('skills.noSupportFiles')}</div>
+        )}
+      </div>
+    </details>
+  )
+}
+
 function SkillDetailModal({
   path,
   onClose,
@@ -1169,9 +1213,12 @@ function SkillDetailModal({
             <div className="mt-2 text-[13px]" style={{ color: 'var(--hud-text-dim)' }}>{data.description}</div>
           )}
           {data?.path && (
-            <div className="mt-1 truncate text-[11px] font-mono" style={{ color: 'var(--hud-text-dim)' }}>
-              {data.path}
-            </div>
+            <>
+              <div className="mt-1 truncate text-[11px] font-mono" style={{ color: 'var(--hud-text-dim)' }}>
+                {data.path}
+              </div>
+              <SkillSupportFileTree path={data.path} />
+            </>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             <button

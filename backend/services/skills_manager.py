@@ -576,6 +576,58 @@ def duplicate_skill(
     }
 
 
+def list_skill_files(
+    path: str,
+    hermes_dir: str | None = None,
+) -> dict[str, Any]:
+    skill_path, skills_dir = _resolve_skill_md(path, hermes_dir)
+    skill_root = _skill_dir_for_path(skill_path, skills_dir)
+    items: list[dict[str, Any]] = []
+
+    for current, dirs, files in os.walk(skill_root, followlinks=False):
+        current_path = Path(current)
+        relative_root = current_path.relative_to(skill_root)
+        in_support_dir = bool(
+            relative_root.parts
+            and relative_root.parts[0] in _SKILL_SUPPORT_DIRS
+        )
+        if (
+            current_path != skill_root
+            and "SKILL.md" in files
+            and not in_support_dir
+        ):
+            dirs[:] = []
+            continue
+
+        dirs[:] = sorted(
+            name
+            for name in dirs
+            if name not in _SKILL_SCAN_EXCLUDED_DIRS
+            and not (current_path / name).is_symlink()
+        )
+        for filename in sorted(files):
+            file_path = current_path / filename
+            if file_path == skill_path or file_path.is_symlink() or not file_path.is_file():
+                continue
+            relative = file_path.relative_to(skill_root)
+            kind = (
+                relative.parts[0]
+                if relative.parts and relative.parts[0] in _SKILL_SUPPORT_DIRS
+                else "other"
+            )
+            items.append(
+                {
+                    "path": relative.as_posix(),
+                    "name": file_path.name,
+                    "kind": kind,
+                    "size": file_path.stat().st_size,
+                }
+            )
+
+    items.sort(key=lambda item: item["path"])
+    return {"path": str(skill_path), "items": items}
+
+
 def _path_is_under(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)

@@ -71,11 +71,11 @@
 
 ### 任务 6：Skill 文件树
 
-- [ ] 测试文件树只返回 Skill 根目录内普通文件，按相对路径排序并跳过符号链接和嵌套 Skill。
-- [ ] 新增 `GET /api/skills/files?path=...`，返回 `path/name/kind/size`。
-- [ ] Skill 详情弹窗增加可折叠文件树，区分 references、scripts、assets、templates 和其他文件。
-- [ ] 运行测试和构建。
-- [ ] 提交 `feat: show skill support file tree`。
+- [x] 测试文件树只返回 Skill 根目录内普通文件，按相对路径排序并跳过符号链接和嵌套 Skill。
+- [x] 新增 `GET /api/skills/files?path=...`，返回 `path/name/kind/size`。
+- [x] Skill 详情弹窗增加可折叠文件树，区分 references、scripts、assets、templates 和其他文件。
+- [x] 运行测试和构建。
+- [x] 提交 `feat: show skill support file tree`。
 
 ### 任务 7：完整验收与收尾
 

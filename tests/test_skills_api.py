@@ -56,6 +56,7 @@ def test_skill_management_routes_are_registered(registered_routes) -> None:
     assert ("POST", "/api/skills/validate") in registered_routes
     assert ("POST", "/api/skills/move") in registered_routes
     assert ("POST", "/api/skills/duplicate") in registered_routes
+    assert ("GET", "/api/skills/files") in registered_routes
     assert ("POST", "/api/skills/import-zip") in registered_routes
     assert ("GET", "/api/skills/market/search") in registered_routes
     assert ("POST", "/api/skills/market/install") in registered_routes
@@ -889,6 +890,47 @@ def test_duplicate_skill_rejects_symbolic_links(hermes_home: Path) -> None:
 
     with pytest.raises(ValueError, match="symbolic links"):
         skills_manager.duplicate_skill(str(skill_md), "research", "linked-copy")
+
+
+def test_list_skill_files_returns_sorted_support_files_and_skips_unsafe_entries(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    root = hermes_home / "skills" / "research" / "file-tree"
+    skill_md = root / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text("# File tree\n", encoding="utf-8")
+    (root / "references").mkdir()
+    (root / "references" / "notes.md").write_text("notes", encoding="utf-8")
+    (root / "scripts").mkdir()
+    (root / "scripts" / "run.sh").write_text("echo run", encoding="utf-8")
+    (root / "config.json").write_text("{}", encoding="utf-8")
+    nested = root / "nested" / "child"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text("# Child\n", encoding="utf-8")
+    (nested / "secret.txt").write_text("secret", encoding="utf-8")
+    outside = hermes_home / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    (root / "references" / "linked.md").symlink_to(outside)
+
+    result = skills_manager.list_skill_files(str(skill_md))
+
+    assert [item["path"] for item in result["items"]] == [
+        "config.json",
+        "references/notes.md",
+        "scripts/run.sh",
+    ]
+    assert [item["kind"] for item in result["items"]] == [
+        "other",
+        "references",
+        "scripts",
+    ]
+    assert result["items"][1]["name"] == "notes.md"
+    assert result["items"][1]["size"] == 5
+
+    with pytest.raises(ValueError, match="outside"):
+        skills_manager.list_skill_files(str(hermes_home / "outside" / "SKILL.md"))
 
 
 def test_import_skills_zip_installs_multiple_skills_and_rejects_zip_slip(

@@ -20,6 +20,7 @@ from backend.services.skills_manager import (
     export_skills_bytes,
     import_skills_zip_bytes,
     install_market_skill,
+    list_skill_files,
     list_skills_backups,
     move_skill,
     preview_skills_zip_bytes,
@@ -107,6 +108,16 @@ async def get_skill_detail(path: str = Query(...)):
     if detail is None:
         raise HTTPException(status_code=404, detail="Skill not found")
     return to_dict(detail)
+
+
+@router.get("/skills/files")
+async def get_skill_files(path: str = Query(...)):
+    try:
+        return to_dict(await run_in_threadpool(list_skill_files, path))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/skills/translation-options")

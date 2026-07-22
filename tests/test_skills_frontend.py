@@ -334,6 +334,20 @@ def test_skills_panel_manages_persistent_backup_history() -> None:
     assert "skills.confirmDeleteBackup" in panel
 
 
+def test_skill_detail_shows_scrollable_support_file_tree() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "type SkillFileItem" in panel
+    assert "function SkillSupportFileTree" in panel
+    assert "`/skills/files?path=${encodeURIComponent(path)}`" in panel
+    assert "max-h-28 overflow-y-auto" in panel
+    assert "skills.supportFiles" in panel
+    assert "skills.fileKindReferences" in panel
+    assert "skills.fileKindScripts" in panel
+    assert "skills.fileKindAssets" in panel
+    assert "skills.fileKindTemplates" in panel
+
+
 def test_skills_filters_use_theme_aware_translucent_popovers() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
     styles = (ROOT / "frontend/src/index.css").read_text()
@@ -516,6 +530,7 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.marketVersion': 'Market {version}'" in translations
     assert "'skills.backupHistory': 'Backup history'" in translations
     assert "'skills.confirmDeleteBackup': 'Confirm delete'" in translations
+    assert "'skills.supportFiles': 'Support files'" in translations
     assert "'skills.category.data-science.label': 'Data Science'" in translations
     assert "'skills.category.data-science.description': 'Analysis, notebooks, datasets, and data workflows.'" in translations
     assert "'skills.original': '原文'" in translations
@@ -586,5 +601,6 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.marketVersion': '市场 {version}'" in translations
     assert "'skills.backupHistory': '备份历史'" in translations
     assert "'skills.confirmDeleteBackup': '确认删除'" in translations
+    assert "'skills.supportFiles': '支持文件'" in translations
     assert "'skills.category.data-science.label': '数据科学'" in translations
     assert "'skills.category.data-science.description': '数据分析、Notebook、数据集和数据处理流程。'" in translations
