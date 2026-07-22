@@ -8,6 +8,7 @@ import { timeAgo, formatSize } from '../lib/utils'
 import { useTranslation, type TranslationKey } from '../i18n'
 
 type TranslationMode = 'side-by-side' | 'original' | 'translation'
+type BatchConfirmAction = 'enable' | 'disable' | 'export' | 'delete' | null
 type SkillTranslationProvider = {
   id: string
   name: string
@@ -1591,13 +1592,17 @@ export default function SkillsPanel() {
   const [busySkillPath, setBusySkillPath] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [batchBusy, setBatchBusy] = useState(false)
-  const [batchDeleteConfirming, setBatchDeleteConfirming] = useState(false)
+  const [batchConfirmAction, setBatchConfirmAction] = useState<BatchConfirmAction>(null)
   const [confirmDeletePath, setConfirmDeletePath] = useState('')
   const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([])
   const [operationError, setOperationError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'custom' | 'builtin'>('all')
+
+  useEffect(() => {
+    setBatchConfirmAction(null)
+  }, [selectedCat, searchQuery, statusFilter, typeFilter])
 
   const refreshSkills = useCallback(async () => {
     await mutate()
@@ -1619,7 +1624,7 @@ export default function SkillsPanel() {
     setBusySkillPath(skill.path)
     setOperationError('')
     setConfirmDeletePath('')
-    setBatchDeleteConfirming(false)
+    setBatchConfirmAction(null)
     try {
       await toggleSkillEnabled(skill.name, skill.enabled === false)
       await refreshSkills()
@@ -1633,7 +1638,7 @@ export default function SkillsPanel() {
   const handleDeleteSkill = async (skill: SkillInfo) => {
     if (confirmDeletePath !== skill.path) {
       setConfirmDeletePath(skill.path)
-      setBatchDeleteConfirming(false)
+      setBatchConfirmAction(null)
       return
     }
     setBusySkillPath(skill.path)
@@ -1652,7 +1657,7 @@ export default function SkillsPanel() {
   }
 
   const toggleSelectSkill = (skill: SkillInfo, selected: boolean) => {
-    setBatchDeleteConfirming(false)
+    setBatchConfirmAction(null)
     setSelectedSkillPaths(current => {
       if (selected) {
         return current.includes(skill.path) ? current : [...current, skill.path]
@@ -1663,7 +1668,7 @@ export default function SkillsPanel() {
 
   const clearBatchSelection = () => {
     setSelectedSkillPaths([])
-    setBatchDeleteConfirming(false)
+    setBatchConfirmAction(null)
   }
 
   // Only show loading on initial load
@@ -1720,7 +1725,7 @@ export default function SkillsPanel() {
 
   const selectAllVisible = () => {
     setSelectedSkillPaths(visibleSkills.map(skill => skill.path))
-    setBatchDeleteConfirming(false)
+    setBatchConfirmAction(null)
   }
 
   const allVisibleSelected = visibleSkills.length > 0
@@ -1734,12 +1739,22 @@ export default function SkillsPanel() {
     selectAllVisible()
   }
 
+  const requestBatchConfirmation = (action: Exclude<BatchConfirmAction, null>) => {
+    if (batchConfirmAction === action) {
+      setBatchConfirmAction(null)
+      return true
+    }
+    setBatchConfirmAction(action)
+    setConfirmDeletePath('')
+    return false
+  }
+
   const handleBatchSetEnabled = async (enabled: boolean) => {
     if (!selectedSkills.length) return
+    if (!requestBatchConfirmation(enabled ? 'enable' : 'disable')) return
     setBatchBusy(true)
     setOperationError('')
     setConfirmDeletePath('')
-    setBatchDeleteConfirming(false)
     try {
       for (const skill of selectedSkills) {
         await toggleSkillEnabled(skill.name, enabled)
@@ -1755,10 +1770,10 @@ export default function SkillsPanel() {
 
   const handleBatchExport = async () => {
     if (!selectedSkills.length) return
+    if (!requestBatchConfirmation('export')) return
     setBatchBusy(true)
     setOperationError('')
     setConfirmDeletePath('')
-    setBatchDeleteConfirming(false)
     try {
       await downloadSelectedSkills(selectedSkills.map(skill => skill.path))
     } catch (err) {
@@ -1770,11 +1785,7 @@ export default function SkillsPanel() {
 
   const handleBatchDelete = async () => {
     if (!selectedSkills.length) return
-    if (!batchDeleteConfirming) {
-      setBatchDeleteConfirming(true)
-      setConfirmDeletePath('')
-      return
-    }
+    if (!requestBatchConfirmation('delete')) return
     setBatchBusy(true)
     setOperationError('')
     try {
@@ -1961,16 +1972,16 @@ export default function SkillsPanel() {
                 {allVisibleSelected ? t('skills.deselectAllVisible') : t('skills.selectAllVisible')}
               </button>
               <button type="button" onClick={() => handleBatchSetEnabled(true)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-primary)', border: '1px solid var(--hud-border)' }}>
-                {t('skills.batchEnable')}
+                {batchConfirmAction === 'enable' ? t('skills.batchConfirmEnable') : t('skills.batchEnable')}
               </button>
               <button type="button" onClick={() => handleBatchSetEnabled(false)} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-warning)', border: '1px solid var(--hud-border)' }}>
-                {t('skills.batchDisable')}
+                {batchConfirmAction === 'disable' ? t('skills.batchConfirmDisable') : t('skills.batchDisable')}
               </button>
               <button type="button" onClick={handleBatchExport} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-accent)', border: '1px solid var(--hud-border)' }}>
-                {t('skills.batchExport')}
+                {batchConfirmAction === 'export' ? t('skills.batchConfirmExport') : t('skills.batchExport')}
               </button>
               <button type="button" onClick={handleBatchDelete} disabled={!selectedSkills.length || batchBusy} className="px-2 py-1 text-[12px] cursor-pointer disabled:opacity-40" style={{ color: 'var(--hud-error)', border: '1px solid var(--hud-border)' }}>
-                {batchDeleteConfirming ? t('skills.batchConfirmDelete') : t('skills.batchDelete')}
+                {batchConfirmAction === 'delete' ? t('skills.batchConfirmDelete') : t('skills.batchDelete')}
               </button>
             </div>
           </div>

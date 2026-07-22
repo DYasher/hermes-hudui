@@ -169,17 +169,27 @@ def test_skill_item_places_management_actions_on_right_side() -> None:
     assert "mt-2 flex flex-wrap gap-1" not in panel
 
 
-def test_skills_panel_supports_batch_operations_with_delete_confirmation() -> None:
+def test_skills_panel_requires_confirmation_for_every_batch_operation() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
+    assert "type BatchConfirmAction = 'enable' | 'disable' | 'export' | 'delete' | null" in panel
     assert "selectedSkillPaths" in panel
     assert "toggleSelectSkill" in panel
     assert "selectedSkills" in panel
     assert "handleBatchSetEnabled" in panel
+    assert "handleBatchExport" in panel
     assert "handleBatchDelete" in panel
-    assert "batchDeleteConfirming" in panel
+    assert "batchConfirmAction" in panel
+    assert "requestBatchConfirmation" in panel
+    assert "requestBatchConfirmation(enabled ? 'enable' : 'disable')" in panel
+    assert "requestBatchConfirmation('export')" in panel
+    assert "requestBatchConfirmation('delete')" in panel
     assert "skills.batchEnable" in panel
+    assert "skills.batchConfirmEnable" in panel
     assert "skills.batchDisable" in panel
+    assert "skills.batchConfirmDisable" in panel
+    assert "skills.batchExport" in panel
+    assert "skills.batchConfirmExport" in panel
     assert "skills.batchDelete" in panel
     assert "skills.batchConfirmDelete" in panel
     assert "allVisibleSelected" in panel
@@ -387,8 +397,11 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.enabled': 'Enabled'" in translations
     assert "'skills.disabled': 'Disabled'" in translations
     assert "'skills.batchEnable': 'Enable selected'" in translations
+    assert "'skills.batchConfirmEnable': 'Confirm batch enable'" in translations
     assert "'skills.batchDisable': 'Disable selected'" in translations
+    assert "'skills.batchConfirmDisable': 'Confirm batch disable'" in translations
     assert "'skills.batchExport': 'Export selected'" in translations
+    assert "'skills.batchConfirmExport': 'Confirm batch export'" in translations
     assert "'skills.batchDelete': 'Delete selected'" in translations
     assert "'skills.batchConfirmDelete': 'Confirm batch delete'" in translations
     assert "'skills.selectedCount': '{count} selected'" in translations
@@ -438,8 +451,11 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.enabled': '已启用'" in translations
     assert "'skills.disabled': '已禁用'" in translations
     assert "'skills.batchEnable': '批量启用'" in translations
+    assert "'skills.batchConfirmEnable': '确认批量启用'" in translations
     assert "'skills.batchDisable': '批量禁用'" in translations
+    assert "'skills.batchConfirmDisable': '确认批量禁用'" in translations
     assert "'skills.batchExport': '批量导出'" in translations
+    assert "'skills.batchConfirmExport': '确认批量导出'" in translations
     assert "'skills.batchDelete': '批量删除'" in translations
     assert "'skills.batchConfirmDelete': '确认批量删除'" in translations
     assert "'skills.selectedCount': '已选择 {count} 个'" in translations
