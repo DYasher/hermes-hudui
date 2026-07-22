@@ -37,6 +37,8 @@ type SkillInfo = {
   file_size?: number
   is_custom?: boolean
   enabled?: boolean
+  version?: string
+  author?: string
 }
 type SkillsPayload = {
   total: number
@@ -59,6 +61,8 @@ type SkillMarketItem = {
   installed?: boolean
   installed_category?: string
   installed_path?: string
+  installed_version?: string
+  update_available?: boolean
 }
 type SkillMarketInstallState = {
   status: 'installing' | 'success' | 'error'
@@ -1673,20 +1677,23 @@ function SkillMarketModal({
   }
 
   const installItem = async (item: SkillMarketItem) => {
-    if (item.installed && !force) return
+    const shouldForce = force || Boolean(item.update_available)
+    if (item.installed && !shouldForce) return
     setActiveInstall(item.identifier)
     setInstallStates(current => ({
       ...current,
       [item.identifier]: { status: 'installing' },
     }))
     try {
-      await installMarketSkill(item.identifier, category, force)
+      await installMarketSkill(item.identifier, category, shouldForce)
       setItems(current => current.map(candidate => (
         candidate.identifier === item.identifier
           ? {
               ...candidate,
               installed: true,
               installed_category: category || candidate.installed_category || candidate.category || '',
+              installed_version: candidate.version || candidate.installed_version || '',
+              update_available: false,
             }
           : candidate
       )))
@@ -1713,8 +1720,9 @@ function SkillMarketModal({
     state: SkillMarketInstallState | undefined,
   ) => {
     if (state?.status === 'installing') return t('skills.installingSkill')
-    if (item.installed && !force) return t('skills.marketInstalled')
     if (state?.status === 'error') return t('skills.retryInstall')
+    if (item.update_available) return t('skills.updateSkill')
+    if (item.installed && !force) return t('skills.marketInstalled')
     if (item.installed) return t('skills.reinstallSkill')
     return t('skills.installSkill')
   }
@@ -1751,7 +1759,7 @@ function SkillMarketModal({
           {items.map(item => {
             const installState = installStates[item.identifier]
             const installing = installState?.status === 'installing'
-            const installDisabled = searching || Boolean(activeInstall) || Boolean(item.installed && !force)
+            const installDisabled = searching || Boolean(activeInstall) || Boolean(item.installed && !force && !item.update_available)
             return (
               <div key={item.identifier} className="p-3 border" style={{ borderColor: 'var(--hud-border)', background: 'var(--hud-solid-block)' }}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1762,6 +1770,18 @@ function SkillMarketModal({
                       <div className="mt-1 text-[11px]" style={{ color: 'var(--hud-primary)' }}>
                         {t('skills.marketInstalled')}
                         {item.installed_category ? ` · ${item.installed_category}` : ''}
+                      </div>
+                    )}
+                    {(item.installed_version || item.version) && (
+                      <div className="mt-1 flex flex-wrap gap-3 text-[11px]" style={{ color: 'var(--hud-text-dim)' }}>
+                        {item.installed_version && (
+                          <span>{formatMessage(t('skills.localVersion'), { version: item.installed_version })}</span>
+                        )}
+                        {item.version && (
+                          <span style={{ color: item.update_available ? 'var(--hud-warning)' : 'var(--hud-text-dim)' }}>
+                            {formatMessage(t('skills.marketVersion'), { version: item.version })}
+                          </span>
+                        )}
                       </div>
                     )}
                     {item.description && <div className="mt-1 text-[13px] break-words" style={{ color: 'var(--hud-text-dim)' }}>{item.description}</div>}

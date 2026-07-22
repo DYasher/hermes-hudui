@@ -1192,6 +1192,8 @@ def _installed_skills_index(
         installed = {
             "category": skill.category,
             "path": skill.path,
+            "version": skill.version,
+            "author": skill.author,
         }
         folder_name = Path(skill.path).parent.name
         for name in {skill.name, folder_name}:
@@ -1220,6 +1222,13 @@ def _mark_installed_market_items(
                 "installed": installed is not None,
                 "installed_category": installed["category"] if installed else "",
                 "installed_path": installed["path"] if installed else "",
+                "installed_version": installed["version"] if installed else "",
+                "update_available": bool(
+                    installed
+                    and installed["version"]
+                    and item["version"]
+                    and installed["version"] != item["version"]
+                ),
             }
         )
     return marked

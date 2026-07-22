@@ -769,6 +769,8 @@ def _do_collect_skills(skills_dir: Path, disabled_names: set[str] | None = None)
                 modified_at=mtime,
                 file_size=stat.st_size,
                 enabled=name not in disabled_names,
+                version=meta.get("version", ""),
+                author=meta.get("author", ""),
             )
         )
         mtimes.append(mtime_minute)

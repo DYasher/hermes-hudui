@@ -1491,6 +1491,62 @@ def test_skill_market_search_marks_installed_skills(
     assert items["new-skill"]["installed_path"] == ""
 
 
+def test_skill_market_reports_local_metadata_and_available_updates(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    installed_skill = hermes_home / "skills" / "research" / "versioned" / "SKILL.md"
+    installed_skill.parent.mkdir(parents=True)
+    installed_skill.write_text(
+        "---\nname: versioned\ndescription: Local\nversion: 1.0.0\n"
+        "author: Local Team\n---\n# Versioned\n",
+        encoding="utf-8",
+    )
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "results": [
+                        {
+                            "identifier": "official/versioned",
+                            "name": "versioned",
+                            "version": "2.0.0",
+                        },
+                        {
+                            "identifier": "official/unversioned",
+                            "name": "unversioned",
+                            "version": "1.0.0",
+                        },
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(skills_manager.shutil, "which", lambda name: "/usr/bin/hermes")
+    monkeypatch.setattr(skills_manager.subprocess, "run", fake_run)
+
+    collected = skills_collector.collect_skills(str(hermes_home)).skills[0]
+    assert collected.version == "1.0.0"
+    assert collected.author == "Local Team"
+
+    items = {
+        item["name"]: item
+        for item in skills_manager.search_skill_market("version", hermes_dir=str(hermes_home))[
+            "items"
+        ]
+    }
+    assert items["versioned"]["installed_version"] == "1.0.0"
+    assert items["versioned"]["update_available"] is True
+    assert items["unversioned"]["installed_version"] == ""
+    assert items["unversioned"]["update_available"] is False
+
+
 def test_skill_market_install_runs_hermes_install_and_clears_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -287,6 +287,19 @@ def test_skills_panel_exposes_zip_import_and_market_install() -> None:
     assert "skills.installSkill" in panel
 
 
+def test_skill_market_shows_versions_and_forces_available_updates() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "installed_version?: string" in panel
+    assert "update_available?: boolean" in panel
+    assert "const shouldForce = force || Boolean(item.update_available)" in panel
+    assert "installMarketSkill(item.identifier, category, shouldForce)" in panel
+    assert "item.update_available" in panel
+    assert "skills.updateSkill" in panel
+    assert "skills.localVersion" in panel
+    assert "skills.marketVersion" in panel
+
+
 def test_skills_panel_exposes_search_filters_and_backup_restore_actions() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
@@ -484,6 +497,9 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.installingSkill': 'Installing...'" in translations
     assert "'skills.retryInstall': 'Retry'" in translations
     assert "'skills.installSucceeded': 'Installed successfully.'" in translations
+    assert "'skills.updateSkill': 'Update'" in translations
+    assert "'skills.localVersion': 'Local {version}'" in translations
+    assert "'skills.marketVersion': 'Market {version}'" in translations
     assert "'skills.category.data-science.label': 'Data Science'" in translations
     assert "'skills.category.data-science.description': 'Analysis, notebooks, datasets, and data workflows.'" in translations
     assert "'skills.original': '原文'" in translations
@@ -549,5 +565,8 @@ def test_skills_translations_include_modal_and_bilingual_labels() -> None:
     assert "'skills.installingSkill': '安装中...'" in translations
     assert "'skills.retryInstall': '重试'" in translations
     assert "'skills.installSucceeded': '安装成功。'" in translations
+    assert "'skills.updateSkill': '一键更新'" in translations
+    assert "'skills.localVersion': '本地 {version}'" in translations
+    assert "'skills.marketVersion': '市场 {version}'" in translations
     assert "'skills.category.data-science.label': '数据科学'" in translations
     assert "'skills.category.data-science.description': '数据分析、Notebook、数据集和数据处理流程。'" in translations

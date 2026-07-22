@@ -54,12 +54,12 @@
 
 ### 任务 4：技能市场版本和更新
 
-- [ ] 扩展 `SkillInfo` 版本/作者元数据并测试序列化。
-- [ ] 市场搜索结果增加 `installed_version` 和 `update_available`；仅在市场版本与本地版本都存在且不相同时标记更新。
-- [ ] 市场条目显示本地/市场版本；有更新时显示“一键更新”，自动使用强制安装。
-- [ ] 保留已安装、重装、重试和逐项状态行为。
-- [ ] 运行市场测试、前端测试和构建。
-- [ ] 提交 `feat: show and install skill market updates`。
+- [x] 扩展 `SkillInfo` 版本/作者元数据并测试序列化。
+- [x] 市场搜索结果增加 `installed_version` 和 `update_available`；仅在市场版本与本地版本都存在且不相同时标记更新。
+- [x] 市场条目显示本地/市场版本；有更新时显示“一键更新”，自动使用强制安装。
+- [x] 保留已安装、重装、重试和逐项状态行为。
+- [x] 运行市场测试、前端测试和构建。
+- [x] 提交 `feat: show and install skill market updates`。
 
 ### 任务 5：备份历史管理
 

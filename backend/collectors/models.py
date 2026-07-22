@@ -51,6 +51,8 @@ class SkillInfo:
     file_size: int = 0
     is_custom: bool = False  # heuristic: modified recently and not in a bulk timestamp
     enabled: bool = True
+    version: str = ""
+    author: str = ""
 
 
 @dataclass
