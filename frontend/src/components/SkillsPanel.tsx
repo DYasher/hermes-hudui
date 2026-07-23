@@ -1378,7 +1378,7 @@ function SkillDetailModal({
                 value={draftTranslationProvider}
                 onChange={event => updateTranslationProvider(event.target.value)}
                 data-skill-translation-provider
-                className="w-full px-2 py-1.5 text-[12px] outline-none"
+                className="hud-select w-full px-2 py-1.5 text-[12px] outline-none"
                 style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
               >
                 <option value="">{t('skills.translationProvider')}</option>
@@ -1395,7 +1395,7 @@ function SkillDetailModal({
                 value={draftTranslationModel}
                 onChange={event => updateTranslationModel(event.target.value)}
                 data-skill-translation-model
-                className="w-full px-2 py-1.5 text-[12px] outline-none font-mono"
+                className="hud-select w-full px-2 py-1.5 text-[12px] outline-none font-mono"
                 style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}
               >
                 <option value="">{t('skills.translationModel')}</option>
@@ -1930,7 +1930,7 @@ function SkillMarketModal({
         <div className="shrink-0 p-4 border-b" style={{ borderColor: 'var(--hud-border)' }}>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_160px_auto] gap-2">
             <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('skills.searchMarket')} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }} />
-            <select value={source} onChange={event => setSource(event.target.value)} className="px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
+            <select value={source} onChange={event => setSource(event.target.value)} className="hud-select px-2 py-1.5 outline-none text-[13px]" style={{ background: 'var(--hud-solid-block)', color: 'var(--hud-text)', border: '1px solid var(--hud-border)' }}>
               {['official', 'all', 'skills-sh', 'github', 'clawhub', 'lobehub', 'browse-sh'].map(option => (
                 <option key={option} value={option}>{option}</option>
               ))}

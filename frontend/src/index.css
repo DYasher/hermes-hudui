@@ -585,6 +585,17 @@ select:focus-visible {
   background: color-mix(in srgb, var(--hud-primary) 14%, transparent);
 }
 
+.hud-select {
+  color: var(--hud-text);
+  background-color: var(--hud-solid-block);
+  color-scheme: dark;
+}
+
+.hud-select option {
+  color: var(--hud-text) !important;
+  background-color: var(--hud-bg-panel) !important;
+}
+
 .hud-inline-input {
   border-radius: 12px;
 }

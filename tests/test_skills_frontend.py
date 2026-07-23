@@ -384,6 +384,17 @@ def test_skills_filters_use_theme_aware_translucent_popovers() -> None:
     assert "color-mix(in srgb, var(--hud-bg-hover) 62%, transparent)" in styles
 
 
+def test_skills_native_selects_style_their_options_with_theme_colors() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+    styles = (ROOT / "frontend/src/index.css").read_text()
+
+    assert panel.count("hud-select") >= 3
+    assert ".hud-select" in styles
+    assert ".hud-select option" in styles
+    assert "color-scheme: dark" in styles
+    assert "background-color: var(--hud-bg-panel)" in styles
+
+
 def test_skills_panel_requires_zip_import_preview_before_confirmation() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 
