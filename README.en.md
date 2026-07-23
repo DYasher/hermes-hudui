@@ -65,10 +65,28 @@ Write paths use `fcntl.flock` plus `tempfile.mkstemp` and `os.replace` for locke
 
 The Memory page can inspect and switch the official `memory.provider` external memory setting. Built-in `MEMORY.md` / `USER.md` memory stays enabled, and only one external provider can be active at a time. Supported providers include Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, Supermemory, and Memori.
 
+### Skills Management and Bilingual Reading
+
+The Skills page has grown from a read-only list into a complete local skill management interface:
+
+- Browse skills by category with localized category names and descriptions, then filter by name, description, category, enabled state, or custom type.
+- Open `SKILL.md` in a modal with the original fixed on the left and its translation on the right. English source documents are translated into Chinese, while Chinese source documents are translated into English.
+- Comparison mode synchronizes scrolling by heading and content anchors. Long documents scroll inside the modal instead of moving the entire page.
+- Translation providers and models come from the current Hermes configuration. Only providers with a configured API key are shown, and users can apply a model, translate manually, or retry a failed translation.
+- Translations are cached outside the Hermes Skills directory by source content, target language, provider, and model. The UI records which model generated each translation to avoid repeated token usage.
+- Create, edit, and validate `SKILL.md`, then enable, disable, duplicate, move, or delete a skill with confirmation.
+- Inspect support files under `references`, `scripts`, `assets`, `templates`, and related directories from the detail modal.
+- Import multiple skills from ZIP with a preview step. Restore accepts ZIP archives only and can overwrite existing skills when explicitly selected.
+- Create one-click backups, browse backup history, download or delete backups, and export selected skills as a batch.
+- Batch enable, disable, export, move, and delete operations include confirmation, progress reporting, and failed-item retry.
+- Search the skills market, install skills, compare local and remote versions, and update installed skills when a newer version is available.
+
+Skills writes are serialized with thread and cross-process file locks. Create, duplicate, and ZIP import operations write into a scanner-excluded staging area before publishing to a category, and a multi-skill import rolls back changes already committed by that import if a later item fails. Paths, symlinks, ZIP slip, file count, and expanded archive size are validated. Backups created before delete, overwrite, or move operations live in the HUD cache rather than the Hermes Skills directory.
+
 ### Themes, Backgrounds, and UI Tuning
 
 - The default theme is now **Hermes Teal**, close to the official Nous / Hermes dashboard palette.
-- Five themes are available: Neural Awakening, Hermes Teal, Blade Runner, fsociety, and Anime.
+- Eight themes are available: Hermes Teal, Graphite Grid, Aurora Pulse, Sunset Signal, Neural Awakening, Blade Runner, fsociety, and Anime.
 - The header theme menu supports custom background images via image URL or `data:image/...`.
 - Auto wallpaper mode uses `https://bing.img.run/rand.php` for random Bing images.
 - The background layer moved from individual panels to `.hud-workspace`, keeping the page background consistent.
@@ -108,7 +126,7 @@ The panel currently includes 20 main pages:
 
 - Dashboard: health, cost, model, provider / gateway risk, and action summary.
 - Memory: view and edit Hermes memory / user memory.
-- Skills: view installed skills.
+- Skills: bilingual reading, skill creation and editing, enable-state management, batch actions, ZIP import and restore, backups, and skills-market installation.
 - Sessions: search and inspect Hermes sessions.
 - Replay: export redacted run proof artifacts.
 - Cron: view and manage cron jobs.
@@ -163,9 +181,9 @@ cd frontend && npm run build
 
 ## Safety Boundary
 
-Hermes HUD UI is designed as a trusted local tool. Use it only on localhost or trusted networks. Profiles, Memory, Cron, Gateway, and related pages can write config, start commands, or call the `hermes` CLI; if you expose the service to the public internet or an untrusted network, treat these APIs as high-risk management endpoints.
+Hermes HUD UI is designed as a trusted local tool. Use it only on localhost or trusted networks. Profiles, Memory, Skills, Cron, Gateway, and related pages can write config, modify skill directories, start commands, or call the `hermes` CLI; if you expose the service to the public internet or an untrusted network, treat these APIs as high-risk management endpoints.
 
-Profile writes and deletes use path validation, symlink rejection, locks, and atomic writes, but they still modify real local config under `~/.hermes/`. Confirm that the current Hermes home points to the instance you intend to manage before running write operations.
+Profile and Skills writes use path validation, symlink rejection, locks, staging, and transactional rollback where needed, but they still modify real local configuration and skills under `~/.hermes/`. Confirm that the current Hermes home points to the instance you intend to manage before running write operations.
 
 ## Relationship to the TUI
 
