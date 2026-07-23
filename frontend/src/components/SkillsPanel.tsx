@@ -868,6 +868,7 @@ function SkillDetailModal({
   const originalScrollRef = useRef<HTMLDivElement | null>(null)
   const translationScrollRef = useRef<HTMLDivElement | null>(null)
   const syncingScrollRef = useRef(false)
+  const translationRequestRef = useRef(0)
   const { data, isLoading, error, mutate } = useApi<SkillDetail>(
     `/skills/detail?path=${encodeURIComponent(path)}`,
     0,
@@ -918,6 +919,7 @@ function SkillDetailModal({
   }, [translationOptions, providerOptions, draftTranslationProvider, draftTranslationModel, appliedTranslationProvider, appliedTranslationModel])
 
   useEffect(() => {
+    translationRequestRef.current += 1
     setTranslation('')
     setTranslationSourceLang('')
     setTranslationTargetLang('')
@@ -958,6 +960,7 @@ function SkillDetailModal({
     if (!translationOptionsReady) return
     if (providerOptions.length > 0 && !appliedTranslationProvider) return
     if (appliedModelOptions.length > 0 && !appliedTranslationModel) return
+    const requestId = ++translationRequestRef.current
 
     if (!cacheOnly) {
       setTranslation('')
@@ -978,16 +981,20 @@ function SkillDetailModal({
         force,
         cache_only: cacheOnly,
       }),
-    })
+      })
       .then(async res => {
+        if (requestId !== translationRequestRef.current) return null
         if (!res.ok) throw new Error(await res.text())
         return res.json()
       })
       .then(payload => {
+        if (requestId !== translationRequestRef.current) return
+        if (!payload) return
         if (payload.cache_miss) return
         applyTranslationPayload(payload)
       })
       .catch(err => {
+        if (requestId !== translationRequestRef.current) return
         if (!cacheOnly) {
           const message = err instanceof Error ? err.message : String(err)
           setTranslationError(message)
@@ -995,6 +1002,7 @@ function SkillDetailModal({
         }
       })
       .finally(() => {
+        if (requestId !== translationRequestRef.current) return
         if (!cacheOnly) setTranslationLoading(false)
       })
   }
@@ -1030,6 +1038,8 @@ function SkillDetailModal({
   const applyTranslationModel = () => {
     const provider = draftTranslationProvider.trim()
     const model = draftTranslationModel.trim()
+    translationRequestRef.current += 1
+    setTranslationLoading(false)
     setAppliedTranslationProvider(provider)
     setAppliedTranslationModel(model)
     storeValue(TRANSLATION_PROVIDER_STORAGE_KEY, provider)
@@ -1080,6 +1090,8 @@ function SkillDetailModal({
       setEditorValidation(validation)
       if (!validation.valid) return
       await saveSkillContent(data.path, editorContent)
+      translationRequestRef.current += 1
+      setTranslationLoading(false)
       await mutate()
       onChanged()
       setIsEditing(false)

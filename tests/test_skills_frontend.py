@@ -134,6 +134,25 @@ def test_skill_translation_remounts_translated_pane_after_completion() -> None:
     assert "key={`${data.path}:${translationTargetLang}:${translationRenderKey}`}" in panel
 
 
+def test_skill_translation_ignores_stale_async_responses() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+
+    assert "translationRequestRef" in panel
+    assert "const requestId = ++translationRequestRef.current" in panel
+    assert "if (requestId !== translationRequestRef.current) return" in panel
+    assert "translationRequestRef.current += 1" in panel
+
+
+def test_applying_translation_model_clears_inflight_loading_state() -> None:
+    panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
+    apply_model = panel.split("const applyTranslationModel = () => {")[1].split(
+        "const startEditing = () => {"
+    )[0]
+
+    assert "translationRequestRef.current += 1" in apply_model
+    assert "setTranslationLoading(false)" in apply_model
+
+
 def test_skills_panel_exposes_management_actions_and_editor() -> None:
     panel = (ROOT / "frontend/src/components/SkillsPanel.tsx").read_text()
 

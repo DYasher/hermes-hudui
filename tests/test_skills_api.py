@@ -7,7 +7,10 @@ import json
 import os
 import shutil
 import subprocess
+import threading
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -754,6 +757,88 @@ def test_create_skill_writes_safe_skill_md_template(hermes_home: Path) -> None:
         )
 
 
+def test_create_skill_validates_custom_content_before_writing(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    existing = hermes_home / "skills" / "core" / "existing" / "SKILL.md"
+    existing.parent.mkdir(parents=True)
+    existing.write_text(
+        "---\nname: shared-name\ndescription: Existing\n---\n# Existing\n",
+        encoding="utf-8",
+    )
+    clear_cache()
+
+    with pytest.raises(ValueError, match="duplicate"):
+        skills_manager.create_skill(
+            "research",
+            "duplicate-folder",
+            content=(
+                "---\nname: shared-name\ndescription: Duplicate\n---\n# Duplicate\n"
+            ),
+        )
+    with pytest.raises(ValueError, match="validation failed"):
+        skills_manager.create_skill(
+            "research",
+            "broken-frontmatter",
+            content="---\nname: [broken\n---\n# Broken\n",
+        )
+
+    assert not (hermes_home / "skills" / "research").exists()
+
+
+def test_create_skill_rejects_symlinked_category(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    skills_dir = hermes_home / "skills"
+    outside = hermes_home / "outside-category"
+    outside.mkdir()
+    skills_dir.mkdir()
+    (skills_dir / "research").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="outside"):
+        skills_manager.create_skill("research", "escaped")
+
+    assert not (outside / "escaped").exists()
+
+
+def test_create_skill_serializes_same_destination(hermes_home: Path, monkeypatch) -> None:
+    from backend.services import skills_manager
+
+    real_write = skills_manager._write_text_atomic
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    calls_lock = threading.Lock()
+    write_calls = 0
+
+    def delayed_write(path: Path, content: str) -> None:
+        nonlocal write_calls
+        with calls_lock:
+            write_calls += 1
+            call_number = write_calls
+        if call_number == 1:
+            first_entered.set()
+            assert release_first.wait(timeout=2)
+        real_write(path, content)
+
+    monkeypatch.setattr(skills_manager, "_write_text_atomic", delayed_write)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(skills_manager.create_skill, "research", "same")
+        assert first_entered.wait(timeout=2)
+        second = executor.submit(skills_manager.create_skill, "research", "same")
+        time.sleep(0.05)
+        assert not second.done()
+        release_first.set()
+
+        first.result(timeout=2)
+        with pytest.raises(FileExistsError):
+            second.result(timeout=2)
+
+    assert write_calls == 1
+
+
 def test_skill_enabled_state_is_collected_from_config_and_can_be_toggled(
     hermes_home: Path,
 ) -> None:
@@ -808,6 +893,26 @@ def test_delete_skill_moves_skill_directory_to_hud_backup(hermes_home: Path) -> 
     assert (backup_path / "references" / "notes.md").read_text(encoding="utf-8") == "notes"
     with pytest.raises(ValueError):
         backup_path.resolve().relative_to(hermes_home.resolve())
+
+
+def test_delete_skill_backup_does_not_follow_support_symlinks(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    skill_dir = hermes_home / "skills" / "core" / "linked-delete"
+    skill_md = skill_dir / "SKILL.md"
+    skill_dir.mkdir(parents=True)
+    skill_md.write_text("# Linked delete\n", encoding="utf-8")
+    outside = hermes_home / "outside-secret.txt"
+    outside.write_text("secret", encoding="utf-8")
+    (skill_dir / "linked-secret.txt").symlink_to(outside)
+
+    result = skills_manager.delete_skill(str(skill_md))
+
+    backed_up_link = Path(result["backup_path"]) / "linked-secret.txt"
+    assert backed_up_link.is_symlink()
+    assert backed_up_link.readlink() == outside
 
 
 def test_move_skill_moves_directory_and_backs_up_source(hermes_home: Path) -> None:
@@ -907,6 +1012,66 @@ def test_duplicate_skill_rejects_symbolic_links(hermes_home: Path) -> None:
 
     with pytest.raises(ValueError, match="symbolic links"):
         skills_manager.duplicate_skill(str(skill_md), "research", "linked-copy")
+
+
+def test_duplicate_skill_failure_preserves_concurrent_destination(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    source = hermes_home / "skills" / "core" / "source"
+    skill_md = source / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text(
+        "---\nname: source\ndescription: Source\n---\n# Source\n",
+        encoding="utf-8",
+    )
+    destination = hermes_home / "skills" / "research" / "source-copy"
+
+    def fail_after_concurrent_create(src, dst, *args, **kwargs):
+        destination.mkdir(parents=True)
+        (destination / "marker.txt").write_text("keep", encoding="utf-8")
+        raise FileExistsError("concurrent destination")
+
+    monkeypatch.setattr(skills_manager.shutil, "copytree", fail_after_concurrent_create)
+
+    with pytest.raises(FileExistsError, match="concurrent destination"):
+        skills_manager.duplicate_skill(
+            str(skill_md),
+            "research",
+            "source-copy",
+        )
+
+    assert (destination / "marker.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_duplicate_skill_stages_outside_collected_categories(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    source = hermes_home / "skills" / "core" / "source"
+    skill_md = source / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text(
+        "---\nname: source\ndescription: Source\n---\n# Source\n",
+        encoding="utf-8",
+    )
+    real_copytree = shutil.copytree
+    staged_paths: list[Path] = []
+
+    def capture_copytree(src, dst, *args, **kwargs):
+        staged_paths.append(Path(dst))
+        return real_copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(skills_manager.shutil, "copytree", capture_copytree)
+
+    skills_manager.duplicate_skill(str(skill_md), "research", "source-copy")
+
+    assert len(staged_paths) == 1
+    assert ".archive" in staged_paths[0].parts
 
 
 def test_list_skill_files_returns_sorted_support_files_and_skips_unsafe_entries(
@@ -1116,6 +1281,133 @@ def test_import_skills_zip_overwrites_only_after_preview(
     backups = list(backup_root.rglob("SKILL.md"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == "# Existing\n"
+
+
+def test_import_overwrite_keeps_existing_skill_when_extraction_fails(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    existing = hermes_home / "skills" / "research" / "existing"
+    skill_md = existing / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text("# Existing\n", encoding="utf-8")
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("bundle/skills/research/existing/SKILL.md", "# Replacement\n")
+        zf.writestr("bundle/skills/research/existing/references/info.md", "info")
+
+    def fail_copy(*args, **kwargs):
+        raise OSError("disk write failed")
+
+    monkeypatch.setattr(skills_manager.shutil, "copyfileobj", fail_copy)
+
+    with pytest.raises(OSError, match="disk write failed"):
+        skills_manager.import_skills_zip_bytes(
+            archive.getvalue(),
+            filename="bundle.zip",
+            overwrite=True,
+        )
+
+    assert skill_md.read_text(encoding="utf-8") == "# Existing\n"
+    assert not any(existing.parent.glob(".existing-import-*"))
+
+
+def test_import_rejects_symlinked_category(hermes_home: Path) -> None:
+    from backend.services import skills_manager
+
+    skills_dir = hermes_home / "skills"
+    outside = hermes_home / "outside-category"
+    outside.mkdir()
+    skills_dir.mkdir()
+    (skills_dir / "research").symlink_to(outside, target_is_directory=True)
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(
+            "bundle/skills/research/escaped/SKILL.md",
+            "---\nname: escaped\ndescription: Escaped\n---\n# Escaped\n",
+        )
+
+    with pytest.raises(ValueError, match="outside"):
+        skills_manager.import_skills_zip_bytes(
+            archive.getvalue(),
+            filename="bundle.zip",
+        )
+
+    assert not (outside / "escaped").exists()
+
+
+def test_import_rejects_frontmatter_name_used_by_another_skill(
+    hermes_home: Path,
+) -> None:
+    from backend.services import skills_manager
+
+    existing = hermes_home / "skills" / "core" / "existing" / "SKILL.md"
+    existing.parent.mkdir(parents=True)
+    existing.write_text(
+        "---\nname: shared-name\ndescription: Existing\n---\n# Existing\n",
+        encoding="utf-8",
+    )
+    clear_cache()
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(
+            "bundle/skills/research/imported/SKILL.md",
+            "---\nname: shared-name\ndescription: Imported\n---\n# Imported\n",
+        )
+
+    preview = skills_manager.preview_skills_zip_bytes(
+        archive.getvalue(),
+        filename="duplicate-name.zip",
+    )
+    assert preview["items"][0]["validation"]["valid"] is False
+    assert preview["items"][0]["validation"]["errors"][0]["code"] == (
+        "duplicate_name"
+    )
+
+    with pytest.raises(ValueError, match="already uses"):
+        skills_manager.import_skills_zip_bytes(
+            archive.getvalue(),
+            filename="duplicate-name.zip",
+        )
+    assert not (hermes_home / "skills" / "research" / "imported").exists()
+
+
+def test_import_rolls_back_earlier_commits_when_a_later_publish_fails(
+    hermes_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import skills_manager
+
+    existing = hermes_home / "skills" / "research" / "beta" / "SKILL.md"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("# Existing beta\n", encoding="utf-8")
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("bundle/skills/research/alpha/SKILL.md", "# Alpha\n")
+        zf.writestr("bundle/skills/research/beta/SKILL.md", "# Replacement beta\n")
+
+    real_rename = Path.rename
+
+    def fail_beta_publish(source: Path, target: Path):
+        if source.name.startswith(".beta-import-") and Path(target).name == "beta":
+            raise OSError("publish failed")
+        return real_rename(source, target)
+
+    monkeypatch.setattr(Path, "rename", fail_beta_publish)
+
+    with pytest.raises(OSError, match="publish failed"):
+        skills_manager.import_skills_zip_bytes(
+            archive.getvalue(),
+            filename="transaction.zip",
+            overwrite=True,
+        )
+
+    assert not (hermes_home / "skills" / "research" / "alpha").exists()
+    assert existing.read_text(encoding="utf-8") == "# Existing beta\n"
 
 
 def test_backup_skills_bytes_preserves_skill_files_without_writing_hermes_home(

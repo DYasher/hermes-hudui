@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import functools
 import hashlib
 import io
 import json
@@ -12,11 +13,17 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import threading
 import zipfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None
 
 import yaml
 
@@ -59,6 +66,23 @@ _MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 _BACKUP_ARCHIVE_NAME = re.compile(
     r"^hermes-skills-backup-\d{8}-\d{6}-\d{6}\.zip$"
 )
+_SKILL_WRITE_LOCK = threading.RLock()
+
+
+def _serialized_skill_write(func):
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        with _SKILL_WRITE_LOCK:
+            with _open_skill_write_lock() as lock_file:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    if fcntl is not None:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    return wrapped
 
 
 def _hermes_path(hermes_dir: str | None = None) -> Path:
@@ -76,6 +100,25 @@ def _source_skills_dir(hermes_dir: str | None = None) -> Path:
 def _cache_base() -> Path:
     xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
     return Path(xdg_cache_home).expanduser() if xdg_cache_home else Path.home() / ".cache"
+
+
+def _open_skill_write_lock():
+    uid = getattr(os, "getuid", lambda: 0)()
+    candidates = [
+        _cache_base() / "hermes-hudui" / "skills-write.lock",
+        Path(tempfile.gettempdir())
+        / f"hermes-hudui-{uid}"
+        / "skills-write.lock",
+    ]
+    last_error: OSError | None = None
+    for lock_path in candidates:
+        try:
+            lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            return lock_path.open("a+b")
+        except OSError as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
 
 
 def _backup_root() -> Path:
@@ -151,7 +194,7 @@ def _backup_directory(path: Path, skills_dir: Path, operation: str) -> Path:
     rel = path.relative_to(skills_dir)
     backup_path = _backup_root() / operation / _backup_stamp() / rel
     backup_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(path, backup_path)
+    shutil.copytree(path, backup_path, symlinks=True)
     return backup_path
 
 
@@ -340,6 +383,7 @@ def validate_skill_content(
     }
 
 
+@_serialized_skill_write
 def save_skill_content(
     path: str,
     content: str,
@@ -368,6 +412,7 @@ def save_skill_content(
     }
 
 
+@_serialized_skill_write
 def create_skill(
     category: str,
     name: str,
@@ -378,13 +423,42 @@ def create_skill(
     category = _validate_slug(category or "uncategorized", "category")
     name = _validate_slug(name, "name")
     description = str(description or "").strip()
-    skill_path = _skills_dir(hermes_dir) / category / name / "SKILL.md"
-    if skill_path.exists():
+    skills_dir = _skills_dir(hermes_dir).resolve()
+    destination = _skill_destination(skills_dir, category, name)
+    skill_path = destination / "SKILL.md"
+    if destination.exists():
         raise FileExistsError("skill already exists")
     body = str(content or "").strip()
     if not body:
         body = _default_skill_content(name, description)
-    _write_text_atomic(skill_path, body if body.endswith("\n") else f"{body}\n")
+    validation = validate_skill_content(
+        body,
+        path=str(skill_path),
+        hermes_dir=hermes_dir,
+    )
+    if not validation["valid"]:
+        messages = "; ".join(
+            f"{item['code']}: {item['message']}" for item in validation["errors"]
+        )
+        raise ValueError(f"skill validation failed: {messages}")
+    staging_root, archive_created = _create_skill_staging_root(
+        skills_dir,
+        f".{name}-create-",
+    )
+    staging = staging_root / "skill"
+    staging.mkdir()
+    try:
+        _write_text_atomic(
+            staging / "SKILL.md",
+            body if body.endswith("\n") else f"{body}\n",
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination = _skill_destination(skills_dir, category, name)
+        if destination.exists():
+            raise FileExistsError("skill already exists")
+        staging.rename(destination)
+    finally:
+        _cleanup_skill_staging_root(staging_root, archive_created)
     clear_cache()
     detail = read_skill_detail(str(skill_path), str(_hermes_path(hermes_dir)))
     return {
@@ -394,6 +468,7 @@ def create_skill(
     }
 
 
+@_serialized_skill_write
 def set_skill_enabled(
     name: str,
     enabled: bool,
@@ -431,6 +506,7 @@ def set_skill_enabled(
     }
 
 
+@_serialized_skill_write
 def delete_skill(path: str, hermes_dir: str | None = None) -> dict[str, Any]:
     skill_path, skills_dir = _resolve_skill_md(path, hermes_dir)
     skill_dir = _skill_dir_for_path(skill_path, skills_dir)
@@ -459,13 +535,19 @@ def _skill_destination(
     category: str,
     directory_name: str,
 ) -> Path:
+    skills_dir = skills_dir.resolve()
     category = _validate_slug(category or "uncategorized", "category")
     destination = skills_dir / category / directory_name
     if not _path_is_under(destination.resolve(), skills_dir):
         raise ValueError("skill destination is outside the Hermes skills directory")
+    if _path_contains_symlink(destination, skills_dir):
+        raise ValueError(
+            "skill destination is outside the Hermes skills directory or uses a symbolic link"
+        )
     return destination
 
 
+@_serialized_skill_write
 def move_skill(
     path: str,
     category: str,
@@ -523,6 +605,7 @@ def _content_with_skill_name(content: str, name: str) -> str:
     return f"---\n{frontmatter}\n---\n{body}"
 
 
+@_serialized_skill_write
 def duplicate_skill(
     path: str,
     category: str,
@@ -556,13 +639,18 @@ def duplicate_skill(
         raise ValueError(f"skill validation failed: {messages}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
+    destination = _skill_destination(skills_dir, category, name)
+    staging_root, archive_created = _create_skill_staging_root(
+        skills_dir,
+        f".{name}-duplicate-",
+    )
+    staging = staging_root / "skill"
     try:
-        shutil.copytree(source_dir, destination)
-        _write_text_atomic(destination / "SKILL.md", duplicate_content)
-    except Exception:
-        if destination.exists():
-            shutil.rmtree(destination)
-        raise
+        shutil.copytree(source_dir, staging)
+        _write_text_atomic(staging / "SKILL.md", duplicate_content)
+        staging.rename(destination)
+    finally:
+        _cleanup_skill_staging_root(staging_root, archive_created)
     duplicated_path = destination / "SKILL.md"
     clear_cache()
     return {
@@ -650,6 +738,30 @@ def _path_contains_symlink(path: Path, root: Path) -> bool:
         if current.is_symlink():
             return True
     return False
+
+
+def _create_skill_staging_root(skills_dir: Path, prefix: str) -> tuple[Path, bool]:
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir = skills_dir / ".archive"
+    archive_created = not archive_dir.exists()
+    if archive_dir.is_symlink() or (
+        archive_dir.exists() and not archive_dir.is_dir()
+    ):
+        raise ValueError("skill staging directory is unsafe")
+    if not _path_is_under(archive_dir.resolve(), skills_dir):
+        raise ValueError("skill staging directory is outside the Hermes skills directory")
+    archive_dir.mkdir(exist_ok=True)
+    staging_root = Path(tempfile.mkdtemp(prefix=prefix, dir=archive_dir))
+    return staging_root, archive_created
+
+
+def _cleanup_skill_staging_root(path: Path, archive_created: bool) -> None:
+    shutil.rmtree(path, ignore_errors=True)
+    if archive_created:
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
 
 
 def _indexed_skill_roots(
@@ -1065,7 +1177,7 @@ def _plan_skill_imports(
 ) -> list[tuple[tuple[str, ...], str, str, str, Path]]:
     planned = []
     for root_parts, (category, name) in sorted(unique_roots.items()):
-        dest_dir = skills_dir / category / name
+        dest_dir = _skill_destination(skills_dir, category, name)
         if not dest_dir.exists():
             status = "add"
         elif overwrite:
@@ -1134,6 +1246,39 @@ def _validate_zip_skill_contents(
     return validations
 
 
+def _validate_existing_skill_name_conflicts(
+    validations: dict[tuple[str, ...], dict[str, Any]],
+    planned: list[tuple[tuple[str, ...], str, str, str, Path]],
+    hermes_dir: str | None,
+) -> None:
+    existing_by_name: dict[str, list[Path]] = {}
+    for skill in collect_skills(hermes_dir).skills:
+        existing_by_name.setdefault(skill.name.strip().casefold(), []).append(
+            Path(skill.path).expanduser().resolve()
+        )
+
+    for root_parts, _, _, _, destination in planned:
+        validation = validations[root_parts]
+        imported_name = validation["metadata"].get("name", "").strip()
+        if not imported_name:
+            continue
+        destination_path = (destination / "SKILL.md").resolve()
+        conflicts = [
+            path
+            for path in existing_by_name.get(imported_name.casefold(), [])
+            if path != destination_path
+        ]
+        if not conflicts:
+            continue
+        validation["errors"].append(
+            _validation_issue(
+                "duplicate_name",
+                f"another Skill already uses the name '{imported_name}'",
+            )
+        )
+        validation["valid"] = False
+
+
 def preview_skills_zip_bytes(
     data: bytes,
     filename: str = "skills.zip",
@@ -1141,12 +1286,13 @@ def preview_skills_zip_bytes(
     hermes_dir: str | None = None,
 ) -> dict[str, Any]:
     _validate_zip_payload(data)
-    skills_dir = _skills_dir(hermes_dir)
+    skills_dir = _skills_dir(hermes_dir).resolve()
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         entries, unique_roots = _scan_skill_zip(archive)
         validations = _validate_zip_skill_contents(archive, entries, unique_roots)
 
     planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
+    _validate_existing_skill_name_conflicts(validations, planned, hermes_dir)
     items = [
         {
             "name": name,
@@ -1170,6 +1316,7 @@ def preview_skills_zip_bytes(
     }
 
 
+@_serialized_skill_write
 def import_skills_zip_bytes(
     data: bytes,
     filename: str = "skills.zip",
@@ -1177,10 +1324,12 @@ def import_skills_zip_bytes(
     hermes_dir: str | None = None,
 ) -> dict[str, Any]:
     _validate_zip_payload(data)
-    skills_dir = _skills_dir(hermes_dir)
+    skills_dir = _skills_dir(hermes_dir).resolve()
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         entries, unique_roots = _scan_skill_zip(archive)
         validations = _validate_zip_skill_contents(archive, entries, unique_roots)
+        planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
+        _validate_existing_skill_name_conflicts(validations, planned, hermes_dir)
         invalid = [
             validation
             for validation in validations.values()
@@ -1193,52 +1342,126 @@ def import_skills_zip_bytes(
                 for issue in validation["errors"]
             )
             raise ValueError(f"skill validation failed: {messages}")
-        planned = _plan_skill_imports(unique_roots, skills_dir, overwrite)
 
-        items: list[dict[str, Any]] = []
-        for root_parts, category, name, action, dest_dir in planned:
-            if action == "skip":
+        actionable = [item for item in planned if item[3] != "skip"]
+        staging_root: Path | None = None
+        archive_created = False
+        if actionable:
+            staging_root, archive_created = _create_skill_staging_root(
+                skills_dir,
+                ".hud-import-",
+            )
+
+        staged: dict[tuple[str, ...], tuple[Path, int]] = {}
+        preserve_staging = False
+        try:
+            # Extract every Skill completely before changing any installed directory.
+            for index, (root_parts, _, name, action, _) in enumerate(planned):
+                if action == "skip":
+                    continue
+                assert staging_root is not None
+                staging = staging_root / f".{name}-import-{index}"
+                staging.mkdir()
+                staged[root_parts] = (staging, 0)
+
+                copied = 0
+                for info, parts in entries:
+                    if info.is_dir() or not _is_under_parts(parts, root_parts):
+                        continue
+                    relative_parts = parts[len(root_parts) :]
+                    if not relative_parts:
+                        continue
+                    target = (staging / Path(*relative_parts)).resolve()
+                    if not _path_is_under(target, staging):
+                        raise ValueError("unsafe zip path")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(info) as source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+                    copied += 1
+                staged[root_parts] = (staging, copied)
+
+            committed: list[tuple[str, Path, Path | None]] = []
+            try:
+                for index, (root_parts, category, name, action, _) in enumerate(
+                    planned
+                ):
+                    if action == "skip":
+                        continue
+                    destination = _skill_destination(skills_dir, category, name)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination = _skill_destination(skills_dir, category, name)
+                    staging, _ = staged[root_parts]
+
+                    if action == "overwrite":
+                        if not destination.is_dir():
+                            raise FileNotFoundError("skill to overwrite no longer exists")
+                        _backup_directory(
+                            destination,
+                            skills_dir,
+                            "import-overwrite",
+                        )
+                        assert staging_root is not None
+                        rollback = staging_root / f".{name}-rollback-{index}"
+                        destination.rename(rollback)
+                        committed.append((action, destination, rollback))
+                        staging.rename(destination)
+                    else:
+                        if destination.exists():
+                            raise FileExistsError(
+                                "a skill now exists at the import destination"
+                            )
+                        staging.rename(destination)
+                        committed.append((action, destination, None))
+            except Exception:
+                rollback_errors: list[Exception] = []
+                for action, destination, rollback in reversed(committed):
+                    try:
+                        if destination.exists():
+                            shutil.rmtree(destination)
+                        if action == "overwrite" and rollback is not None:
+                            rollback.rename(destination)
+                    except Exception as rollback_error:
+                        rollback_errors.append(rollback_error)
+                clear_cache()
+                if rollback_errors:
+                    preserve_staging = True
+                    raise RuntimeError(
+                        "skill import failed and could not be fully rolled back"
+                    ) from rollback_errors[0]
+                raise
+            else:
+                for action, _, rollback in committed:
+                    if action == "overwrite" and rollback is not None:
+                        shutil.rmtree(rollback, ignore_errors=True)
+
+            items: list[dict[str, Any]] = []
+            for root_parts, category, name, action, destination in planned:
+                if action == "skip":
+                    items.append(
+                        {
+                            "name": name,
+                            "category": category,
+                            "status": "skipped",
+                            "reason": "exists",
+                            "path": str(destination / "SKILL.md"),
+                        }
+                    )
+                    continue
+                _, copied = staged[root_parts]
                 items.append(
                     {
                         "name": name,
                         "category": category,
-                        "status": "skipped",
-                        "reason": "exists",
-                        "path": str(dest_dir / "SKILL.md"),
+                        "status": (
+                            "overwritten" if action == "overwrite" else "installed"
+                        ),
+                        "files": copied,
+                        "path": str(destination / "SKILL.md"),
                     }
                 )
-                continue
-            if action == "overwrite":
-                _backup_directory(dest_dir, skills_dir.resolve(), "import-overwrite")
-                shutil.rmtree(dest_dir)
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
-            copied = 0
-            for info, parts in entries:
-                if info.is_dir() or not _is_under_parts(parts, root_parts):
-                    continue
-                relative_parts = parts[len(root_parts) :]
-                if not relative_parts:
-                    continue
-                target = (dest_dir / Path(*relative_parts)).resolve()
-                try:
-                    target.relative_to(dest_dir.resolve())
-                except ValueError:
-                    raise ValueError("unsafe zip path") from None
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(info) as source, target.open("wb") as output:
-                    shutil.copyfileobj(source, output)
-                copied += 1
-
-            items.append(
-                {
-                    "name": name,
-                    "category": category,
-                    "status": "overwritten" if action == "overwrite" else "installed",
-                    "files": copied,
-                    "path": str(dest_dir / "SKILL.md"),
-                }
-            )
+        finally:
+            if staging_root is not None and not preserve_staging:
+                _cleanup_skill_staging_root(staging_root, archive_created)
 
     clear_cache()
     return {
@@ -1408,6 +1631,7 @@ def search_skill_market(
     }
 
 
+@_serialized_skill_write
 def install_market_skill(
     identifier: str,
     category: str | None = None,
