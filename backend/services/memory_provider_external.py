@@ -14,9 +14,12 @@ from urllib.request import Request, urlopen
 from backend.services import memory_service
 from backend.services import memory_provider_config
 from backend.services.memory_provider_catalog import (
-    MEMORY_PROVIDER_CAPABILITIES,
     MEMORY_PROVIDER_OPTIONS,
 )
+
+MEMOS_CHINA_BASE_URL = "https://memos.memtensor.cn/api/openmem/v1"
+MEMOS_GLOBAL_BASE_URL = "https://api.memt.ai/platform/api/openmem/v1"
+COGNEE_DATASET_SCAN_LIMIT = 20
 
 
 def holographic_db_path() -> Path:
@@ -302,6 +305,379 @@ def _memory_trust_score(raw: dict[str, Any]) -> float:
     return 1.0
 
 
+def _provider_secret(name: str) -> str:
+    env_values = memory_provider_config.read_env_values()
+    return env_values.get(name) or os.environ.get(name, "")
+
+
+def _request_json(
+    url: str,
+    *,
+    headers: dict[str, str],
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+) -> tuple[Any, str]:
+    body = None
+    request_headers = dict(headers)
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/json")
+
+    response = None
+    try:
+        response = urlopen(
+            Request(url, data=body, headers=request_headers, method=method),
+            timeout=3,
+        )
+        return json.loads(response.read().decode("utf-8")), ""
+    except HTTPError as exc:
+        return None, f"HTTP {exc.code}"
+    except (URLError, OSError, TimeoutError, ValueError) as exc:
+        return None, str(getattr(exc, "reason", exc))
+    finally:
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
+
+
+def _payload_list(payload: Any, *keys: str) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _external_failure(provider: str, reason: str, error: str) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "available": False,
+        "readonly": True,
+        "reason": reason,
+        "error": error,
+        "summary": {"total": 0, "categories": {}},
+        "items": [],
+    }
+
+
+def _cognee_item(raw: dict[str, Any], dataset_name: str) -> dict[str, Any]:
+    extension = str(raw.get("extension") or "").strip().lstrip(".")
+    mime_type = str(raw.get("mime_type") or "").strip()
+    return {
+        "id": str(raw.get("id") or raw.get("data_id") or raw.get("name") or ""),
+        "content": str(raw.get("name") or raw.get("content") or raw.get("id") or ""),
+        "category": dataset_name or "dataset",
+        "tags": [value for value in [extension, mime_type] if value],
+        "trust_score": 1.0,
+        "retrieval_count": 0,
+        "helpful_count": 0,
+        "created_at": str(raw.get("created_at") or raw.get("createdAt") or ""),
+        "updated_at": str(raw.get("updated_at") or raw.get("updatedAt") or ""),
+    }
+
+
+def cognee_api_external_view(limit: int = 100) -> dict[str, Any]:
+    values = memory_provider_config.provider_config_values("cognee")
+    endpoint = str(values.get("COGNEE_API_URL", {}).get("value") or "").strip()
+    if not endpoint:
+        return provider_summary_external_view("cognee")
+
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Hermes-HUD/read-only-memory-view",
+    }
+    api_key = _provider_secret("COGNEE_API_KEY")
+    if api_key:
+        headers["X-Api-Key"] = api_key
+
+    datasets_payload, error = _request_json(
+        _join_http_url(endpoint, "/api/v1/datasets"),
+        headers=headers,
+    )
+    if error:
+        return _external_failure("cognee", "cognee_api_failed", error)
+
+    datasets = _payload_list(datasets_payload, "datasets", "data")
+    configured_dataset = str(values.get("COGNEE_DATASET", {}).get("value") or "").strip()
+    if configured_dataset:
+        datasets = [
+            dataset
+            for dataset in datasets
+            if configured_dataset in {str(dataset.get("id") or ""), str(dataset.get("name") or "")}
+        ]
+    datasets = datasets[:COGNEE_DATASET_SCAN_LIMIT]
+
+    items: list[dict[str, Any]] = []
+    categories: dict[str, int] = {}
+    for dataset in datasets:
+        dataset_id = str(dataset.get("id") or "").strip()
+        if not dataset_id:
+            continue
+        dataset_name = str(dataset.get("name") or dataset_id)
+        data_payload, error = _request_json(
+            _join_http_url(endpoint, f"/api/v1/datasets/{quote(dataset_id, safe='')}/data"),
+            headers=headers,
+        )
+        if error:
+            return _external_failure("cognee", "cognee_api_failed", error)
+        for raw in _payload_list(data_payload, "data", "items"):
+            if len(items) >= limit:
+                break
+            items.append(_cognee_item(raw, dataset_name))
+            categories[dataset_name] = categories.get(dataset_name, 0) + 1
+        if len(items) >= limit:
+            break
+
+    return {
+        "provider": "cognee",
+        "available": True,
+        "readonly": True,
+        "reason": "cognee_api",
+        "summary": {"total": len(items), "categories": categories},
+        "items": items,
+    }
+
+
+def _memos_item(raw: dict[str, Any], fallback_category: str) -> dict[str, Any]:
+    metadata = raw.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    category = str(
+        raw.get("memory_type")
+        or raw.get("type")
+        or raw.get("category")
+        or metadata.get("memory_type")
+        or metadata.get("type")
+        or metadata.get("category")
+        or fallback_category
+    )
+    content_value = (
+        raw.get("memory")
+        or raw.get("memory_value")
+        or raw.get("preference")
+        or raw.get("tool_value")
+        or raw.get("experience")
+        or raw.get("content")
+        or raw.get("text")
+        or raw.get("summary")
+        or metadata.get("memory")
+        or metadata.get("memory_value")
+        or metadata.get("preference")
+        or ""
+    )
+    memory_key = str(raw.get("memory_key") or metadata.get("memory_key") or "").strip()
+    content = str(content_value)
+    if memory_key and content:
+        content = f"{memory_key}: {content}"
+    score_values = {**metadata, **raw}
+    return {
+        "id": str(
+            raw.get("id")
+            or raw.get("memory_id")
+            or raw.get("mem_id")
+            or memory_key
+            or content
+        ),
+        "content": content,
+        "category": category,
+        "tags": _memory_tags(raw.get("tags") or metadata.get("tags")),
+        "trust_score": _memory_trust_score(score_values),
+        "retrieval_count": int(
+            raw.get("retrieval_count")
+            or raw.get("retrievalCount")
+            or metadata.get("retrieval_count")
+            or 0
+        ),
+        "helpful_count": int(
+            raw.get("helpful_count")
+            or raw.get("helpfulCount")
+            or metadata.get("helpful_count")
+            or 0
+        ),
+        "created_at": str(
+            raw.get("created_at")
+            or raw.get("createdAt")
+            or raw.get("create_time")
+            or metadata.get("created_at")
+            or metadata.get("create_time")
+            or ""
+        ),
+        "updated_at": str(
+            raw.get("updated_at")
+            or raw.get("updatedAt")
+            or raw.get("update_time")
+            or metadata.get("updated_at")
+            or metadata.get("update_time")
+            or ""
+        ),
+    }
+
+
+def _memos_external_payload(payload: Any, reason: str, limit: int) -> dict[str, Any]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        data = payload if isinstance(payload, dict) else {}
+
+    groups = [
+        ("memory_detail_list", "memory"),
+        ("preference_detail_list", "preference"),
+        ("tool_memory_detail_list", "tool"),
+        ("skill_detail_list", "skill"),
+        ("profile_detail_list", "profile"),
+        ("event_detail_list", "event"),
+        ("text_mem", "memory"),
+        ("pref_mem", "preference"),
+        ("tool_mem", "tool"),
+        ("skill_mem", "skill"),
+    ]
+    items: list[dict[str, Any]] = []
+    categories: dict[str, int] = {}
+    grouped_total = 0
+
+    for key, fallback_category in groups:
+        entries = data.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            memories = entry.get("memories")
+            if isinstance(memories, list):
+                total_nodes = entry.get("total_nodes")
+                grouped_total += int(total_nodes) if isinstance(total_nodes, int | float) else len(memories)
+                raw_memories = memories
+            else:
+                raw_memories = [entry]
+            for raw in raw_memories:
+                if len(items) >= limit or not isinstance(raw, dict):
+                    continue
+                item = _memos_item(raw, fallback_category)
+                items.append(item)
+                category = item["category"] or fallback_category
+                categories[category] = categories.get(category, 0) + 1
+
+    reported_total = data.get("total")
+    total = (
+        int(reported_total)
+        if isinstance(reported_total, int | float)
+        else grouped_total or len(items)
+    )
+    return {
+        "provider": "memos",
+        "available": True,
+        "readonly": True,
+        "reason": reason,
+        "summary": {"total": total, "categories": categories},
+        "items": items,
+    }
+
+
+def memos_cloud_external_view(limit: int = 100) -> dict[str, Any]:
+    values = memory_provider_config.provider_config_values("memos")
+    namespace = str(values.get("MEMOS_NAMESPACE", {}).get("value") or "").strip()
+    api_key = _provider_secret("MEMOS_API_KEY")
+    if not api_key or not namespace:
+        return provider_summary_external_view("memos")
+
+    is_global = str(values.get("MEMOS_IS_GLOBAL", {}).get("value") or "").lower()
+    endpoint = MEMOS_GLOBAL_BASE_URL if is_global in {"1", "true", "yes"} else MEMOS_CHINA_BASE_URL
+
+    url = _join_http_url(endpoint, "/get/memory")
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Token {api_key}",
+        "User-Agent": "Hermes-HUD/read-only-memory-view",
+    }
+    items: list[dict[str, Any]] = []
+    categories: dict[str, int] = {}
+    reported_total = 0
+    page = 1
+    max_pages = max(1, (limit + 49) // 50)
+
+    while page <= max_pages and len(items) < limit:
+        size = min(50, limit - len(items))
+        payload, error = _request_json(
+            url,
+            headers=headers,
+            method="POST",
+            payload={
+                "user_id": namespace,
+                "include_preference": True,
+                "include_tool_memory": True,
+                "page": page,
+                "size": size,
+            },
+        )
+        if error:
+            return _external_failure("memos", "memos_cloud_failed", error)
+
+        normalized = _memos_external_payload(payload, "memos_cloud", limit - len(items))
+        page_items = normalized["items"]
+        for item in page_items:
+            items.append(item)
+            category = item["category"] or "memory"
+            categories[category] = categories.get(category, 0) + 1
+        page_total = normalized["summary"]["total"]
+        if isinstance(page_total, int):
+            reported_total = max(reported_total, page_total)
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            data = payload if isinstance(payload, dict) else {}
+        current = data.get("current")
+        pages = data.get("pages")
+        if isinstance(current, int | float) and isinstance(pages, int | float):
+            if int(current) >= int(pages):
+                break
+        elif not page_items or len(page_items) < size or reported_total <= len(items):
+            break
+        page += 1
+
+    return {
+        "provider": "memos",
+        "available": True,
+        "readonly": True,
+        "reason": "memos_cloud",
+        "summary": {"total": max(reported_total, len(items)), "categories": categories},
+        "items": items,
+    }
+
+
+def memos_self_hosted_external_view(limit: int = 100) -> dict[str, Any]:
+    values = memory_provider_config.provider_config_values("memos")
+    endpoint = str(values.get("MEMOS_BASE_URL", {}).get("value") or "").strip()
+    namespace = str(values.get("MEMOS_NAMESPACE", {}).get("value") or "").strip()
+    if not endpoint or not namespace:
+        return provider_summary_external_view("memos")
+
+    path = "/get_memory" if endpoint.rstrip("/").endswith("/product") else "/product/get_memory"
+    payload, error = _request_json(
+        _join_http_url(endpoint, path),
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Hermes-HUD/read-only-memory-view",
+        },
+        method="POST",
+        payload={
+            "mem_cube_id": namespace,
+            "include_preference": True,
+            "include_tool_memory": True,
+            "include_skill_memory": True,
+            "page": 1,
+            "page_size": limit,
+        },
+    )
+    if error:
+        return _external_failure("memos", "memos_self_hosted_failed", error)
+    return _memos_external_payload(payload, "memos_self_hosted", limit)
+
+
 def _agentmemory_item(raw: dict[str, Any]) -> dict[str, Any]:
     category = str(raw.get("type") or raw.get("category") or "memory")
     return {
@@ -318,8 +694,7 @@ def _agentmemory_item(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _agentmemory_secret() -> str:
-    env_values = memory_provider_config.read_env_values()
-    return env_values.get("AGENTMEMORY_SECRET") or os.environ.get("AGENTMEMORY_SECRET", "")
+    return _provider_secret("AGENTMEMORY_SECRET")
 
 
 def agentmemory_rest_external_view(limit: int = 100) -> dict[str, Any]:
@@ -394,12 +769,24 @@ def agentmemory_rest_external_view(limit: int = 100) -> dict[str, Any]:
 def external_view(provider: str) -> dict[str, Any]:
     if provider == "holographic":
         return holographic_external_view()
+    if provider == "cognee":
+        values = memory_provider_config.provider_config_values(provider)
+        mode = memory_provider_config.current_config_mode(MEMORY_PROVIDER_OPTIONS[provider], values)
+        if mode == "docker_api":
+            return cognee_api_external_view()
     if provider == "agentmemory":
         values = memory_provider_config.provider_config_values(provider)
         mode = memory_provider_config.current_config_mode(MEMORY_PROVIDER_OPTIONS[provider], values)
         if mode == "rest_server":
             return agentmemory_rest_external_view()
-    if MEMORY_PROVIDER_CAPABILITIES.get(provider, {}).get("external_read_mode") == "provider_summary":
+    if provider == "memos":
+        values = memory_provider_config.provider_config_values(provider)
+        mode = memory_provider_config.current_config_mode(MEMORY_PROVIDER_OPTIONS[provider], values)
+        if mode == "cloud":
+            return memos_cloud_external_view()
+        if mode == "self_hosted":
+            return memos_self_hosted_external_view()
+    if provider in {"cognee", "agentmemory", "memos"}:
         return provider_summary_external_view(provider)
     return {
         "provider": provider,

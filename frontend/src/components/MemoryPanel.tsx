@@ -150,6 +150,7 @@ interface MemoryProviderInfo {
     storage: string
     path: string
     secret: boolean
+    control?: 'text' | 'boolean'
     help: string
     requirement: 'required' | 'required_any' | 'optional'
     required_group: string[]
@@ -1409,7 +1410,8 @@ function ExternalMemoryViewPanel({
   const meta = provider.external_view
   const categories = externalView?.summary.categories || {}
   const items = externalView?.items || []
-  const summaryOnly = externalView?.reason === 'summary_only' && !items.length
+  const summaryOnly = externalView?.reason === 'summary_only'
+    || externalView?.reason === 'provider_summary'
   const unavailableReason = externalView?.reason || meta.reason || t('memory.externalUnavailable')
 
   return (
@@ -1465,15 +1467,16 @@ function ExternalMemoryViewPanel({
             </div>
           )}
 
-          {!busy && summaryOnly ? (
+          {!busy && summaryOnly && (
             <div className="text-[12px] p-2" style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-text-dim)' }}>
               {t('memory.externalSummaryOnly')}
             </div>
-          ) : !busy && !items.length ? (
+          )}
+          {!busy && !items.length ? (
             <div className="text-[12px] p-2" style={{ border: '1px solid var(--hud-border)', color: 'var(--hud-text-dim)' }}>
               {t('memory.externalNoItems')}
             </div>
-          ) : (
+          ) : !!items.length && (
             <div className="space-y-1.5">
               {items.map(item => (
                 <div
@@ -1873,18 +1876,36 @@ function ProviderConfigTab({
                       <span style={{ color: 'var(--hud-success)' }}>{t('memory.secretConfigured')}</span>
                     )}
                   </span>
-                  <input
-                    value={configDraft[field.name] ?? ''}
-                    type={field.secret ? 'password' : 'text'}
-                    onChange={event => onDraftChange(field.name, event.target.value)}
-                    placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
-                    className="w-full text-[12px] px-2 py-1.5 outline-none"
-                    style={{
-                      background: 'var(--hud-soft-block)',
-                      border: '1px solid var(--hud-border)',
-                      color: 'var(--hud-text)',
-                    }}
-                  />
+                  {field.control === 'boolean' ? (
+                    <span
+                      className="flex items-center gap-2 w-full text-[12px] px-2 py-1.5"
+                      style={{
+                        background: 'var(--hud-soft-block)',
+                        border: '1px solid var(--hud-border)',
+                        color: 'var(--hud-text)',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={configDraft[field.name] === 'true'}
+                        onChange={event => onDraftChange(field.name, event.target.checked ? 'true' : 'false')}
+                      />
+                      <span>{configDraft[field.name] === 'true' ? t('memory.yes') : t('memory.no')}</span>
+                    </span>
+                  ) : (
+                    <input
+                      value={configDraft[field.name] ?? ''}
+                      type={field.secret ? 'password' : 'text'}
+                      onChange={event => onDraftChange(field.name, event.target.value)}
+                      placeholder={field.secret && current?.configured ? t('memory.replaceSecret') : field.help}
+                      className="w-full text-[12px] px-2 py-1.5 outline-none"
+                      style={{
+                        background: 'var(--hud-soft-block)',
+                        border: '1px solid var(--hud-border)',
+                        color: 'var(--hud-text)',
+                      }}
+                    />
+                  )}
                   <span className="block text-[10px] mt-0.5 font-mono" style={{ color: 'var(--hud-text-dim)' }}>
                     {current?.source || field.path || field.storage}
                   </span>

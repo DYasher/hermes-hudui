@@ -59,6 +59,18 @@ def provider_external_view_info(
             "view_type": "facts",
             "reason": "",
         }
+    if provider == "cognee":
+        endpoint_configured = bool(
+            (config_values or {}).get("COGNEE_API_URL", {}).get("configured")
+        )
+        if current_mode == "docker_api" and endpoint_configured:
+            return {
+                "available": True,
+                "readonly": True,
+                "endpoint": "/api/memory/providers/cognee/external",
+                "view_type": "facts",
+                "reason": "cognee_api",
+            }
     if provider == "agentmemory":
         endpoint_configured = bool(
             (config_values or {}).get("AGENTMEMORY_URL", {}).get("configured")
@@ -71,7 +83,25 @@ def provider_external_view_info(
                 "view_type": "facts",
                 "reason": "agentmemory_rest",
             }
-    if provider_capabilities(provider).get("external_read_mode") == "provider_summary":
+    if provider == "memos":
+        values = config_values or {}
+        namespace_configured = bool(values.get("MEMOS_NAMESPACE", {}).get("configured"))
+        cloud_ready = bool(values.get("MEMOS_API_KEY", {}).get("configured"))
+        self_hosted_ready = bool(values.get("MEMOS_BASE_URL", {}).get("configured"))
+        reason = ""
+        if current_mode == "cloud" and cloud_ready and namespace_configured:
+            reason = "memos_cloud"
+        elif current_mode == "self_hosted" and self_hosted_ready and namespace_configured:
+            reason = "memos_self_hosted"
+        if reason:
+            return {
+                "available": True,
+                "readonly": True,
+                "endpoint": "/api/memory/providers/memos/external",
+                "view_type": "facts",
+                "reason": reason,
+            }
+    if provider in {"cognee", "agentmemory", "memos"}:
         return {
             "available": True,
             "readonly": True,

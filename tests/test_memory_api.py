@@ -12,6 +12,7 @@ time, so pointing it at a tmp dir is just an env var.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
@@ -568,11 +569,14 @@ def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home:
     assert fields["LLM_API_KEY"]["secret"] is True
     assert fields["LLM_API_KEY"]["requirement"] == "required"
     assert fields["COGNEE_API_URL"]["requirement"] == "required"
+    assert fields["COGNEE_API_KEY"]["secret"] is True
+    assert fields["COGNEE_API_KEY"]["requirement"] == "optional"
     assert fields["COGNEE_MCP_URL"]["requirement"] == "required"
     assert fields["COGNEE_DATASET"]["requirement"] == "optional"
     assert fields["COGNEE_API_URL"]["mode_ids"] == ["docker_api"]
+    assert fields["COGNEE_API_KEY"]["mode_ids"] == ["docker_api"]
     assert fields["COGNEE_MCP_URL"]["mode_ids"] == ["mcp_http"]
-    assert cognee["capabilities"]["external_read_mode"] == "provider_summary"
+    assert cognee["capabilities"]["external_read_mode"] == "provider_specific"
 
 
 def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: Path) -> None:
@@ -591,7 +595,7 @@ def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: 
     assert fields["AGENTMEMORY_SECRET"]["secret"] is True
     assert fields["AGENTMEMORY_SECRET"]["requirement"] == "optional"
     assert fields["AGENTMEMORY_MCP_COMMAND"]["requirement"] == "required"
-    assert provider["capabilities"]["external_read_mode"] == "provider_summary"
+    assert provider["capabilities"]["external_read_mode"] == "provider_specific"
 
 
 def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_home: Path) -> None:
@@ -603,15 +607,19 @@ def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_hom
     assert provider["label"] == "MemOS"
     assert provider["group"] == "community"
     assert provider["configured"] is False
-    assert provider["missing_fields"] == ["MEMOS_API_KEY"]
-    assert modes["cloud"]["required_fields"] == ["MEMOS_API_KEY"]
-    assert modes["self_hosted"]["required_fields"] == ["MEMOS_BASE_URL"]
+    assert provider["missing_fields"] == ["MEMOS_API_KEY", "MEMOS_NAMESPACE"]
+    assert modes["cloud"]["required_fields"] == ["MEMOS_API_KEY", "MEMOS_NAMESPACE"]
+    assert modes["self_hosted"]["required_fields"] == ["MEMOS_BASE_URL", "MEMOS_NAMESPACE"]
     assert fields["MEMOS_API_KEY"]["secret"] is True
     assert fields["MEMOS_API_KEY"]["requirement"] == "required"
+    assert fields["MEMOS_IS_GLOBAL"]["requirement"] == "optional"
+    assert fields["MEMOS_IS_GLOBAL"]["mode_ids"] == ["cloud"]
+    assert fields["MEMOS_IS_GLOBAL"]["control"] == "boolean"
     assert fields["MEMOS_BASE_URL"]["requirement"] == "required"
+    assert fields["MEMOS_NAMESPACE"]["requirement"] == "required"
     assert fields["MOS_CHAT_MODEL_PROVIDER"]["requirement"] == "optional"
     assert "MOS_CHAT_MODEL_PROVIDER" in fields
-    assert provider["capabilities"]["external_read_mode"] == "provider_summary"
+    assert provider["capabilities"]["external_read_mode"] == "provider_specific"
 
 
 def test_community_provider_modes_include_mode_specific_setup_guidance(hermes_home: Path) -> None:
@@ -626,7 +634,9 @@ def test_community_provider_modes_include_mode_specific_setup_guidance(hermes_ho
     assert agentmemory_modes["rest_server"]["status_command"] == "curl -sS $AGENTMEMORY_URL/agentmemory/health"
     assert "npx -y @agentmemory/mcp" in agentmemory_modes["mcp_server"]["setup_command"]
     assert memos_modes["cloud"]["dependencies"] == []
+    assert "MEMOS_API_KEY and MEMOS_NAMESPACE" in memos_modes["cloud"]["next_steps"]
     assert "MEMOS_BASE_URL" in memos_modes["self_hosted"]["next_steps"]
+    assert "MEMOS_NAMESPACE" in memos_modes["self_hosted"]["next_steps"]
 
 
 def test_provider_payload_uses_mode_specific_dependency_checks(monkeypatch, hermes_home: Path) -> None:
@@ -897,6 +907,70 @@ def test_save_provider_config_persists_selected_mode_when_provider_has_mode_fiel
     assert result["providers"]["hindsight"]["current_mode"] == "local"
 
 
+def test_save_cognee_docker_mode_persists_when_python_config_exists(hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text("LLM_API_KEY=existing-key\n", encoding="utf-8")
+
+    result = save_memory_provider_config(
+        "cognee",
+        MemoryProviderConfigBody(
+            mode="docker_api",
+            fields={"COGNEE_API_URL": "http://127.0.0.1:8000"},
+        ),
+    )
+
+    assert '"mode": "docker_api"' in (hermes_home / "cognee.json").read_text(
+        encoding="utf-8"
+    )
+    assert result["providers"]["cognee"]["current_mode"] == "docker_api"
+    assert result["providers"]["cognee"]["external_view"]["reason"] == "cognee_api"
+
+
+def test_save_memos_self_hosted_mode_persists_when_cloud_config_exists(
+    hermes_home: Path,
+) -> None:
+    _env_file(hermes_home).write_text(
+        "MEMOS_API_KEY=existing-key\nMEMOS_IS_GLOBAL=false\n",
+        encoding="utf-8",
+    )
+
+    result = save_memory_provider_config(
+        "memos",
+        MemoryProviderConfigBody(
+            mode="self_hosted",
+            fields={
+                "MEMOS_BASE_URL": "http://127.0.0.1:8001",
+                "MEMOS_NAMESPACE": "hermes-cube",
+            },
+        ),
+    )
+
+    assert '"mode": "self_hosted"' in (hermes_home / "memos.json").read_text(
+        encoding="utf-8"
+    )
+    assert result["providers"]["memos"]["current_mode"] == "self_hosted"
+    assert result["providers"]["memos"]["external_view"]["reason"] == "memos_self_hosted"
+
+
+def test_save_provider_config_rejects_conflicting_mode_values(hermes_home: Path) -> None:
+    with pytest.raises(HTTPException) as exc:
+        save_memory_provider_config(
+            "memos",
+            MemoryProviderConfigBody(
+                mode="self_hosted",
+                fields={
+                    "mode": "cloud",
+                    "MEMOS_BASE_URL": "http://127.0.0.1:8001",
+                    "MEMOS_NAMESPACE": "hermes-cube",
+                },
+            ),
+        )
+
+    assert exc.value.status_code == 400
+    assert "conflicting provider config modes" in str(exc.value.detail)
+    assert not _env_file(hermes_home).exists()
+    assert not (hermes_home / "memos.json").exists()
+
+
 def test_provider_payload_reports_structured_read_only_health(hermes_home: Path) -> None:
     (hermes_home / "honcho.json").write_text("{}\n", encoding="utf-8")
 
@@ -960,6 +1034,61 @@ def test_agentmemory_rest_payload_advertises_readable_external_facts(hermes_home
     assert external_view["endpoint"] == "/api/memory/providers/agentmemory/external"
     assert external_view["view_type"] == "facts"
     assert external_view["reason"] == "agentmemory_rest"
+
+
+def test_cognee_api_payload_advertises_readable_external_records(hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "COGNEE_API_URL=http://127.0.0.1:8000\n",
+        encoding="utf-8",
+    )
+
+    status = get_memory_providers()
+    external_view = status["providers"]["cognee"]["external_view"]
+
+    assert external_view["available"] is True
+    assert external_view["endpoint"] == "/api/memory/providers/cognee/external"
+    assert external_view["view_type"] == "facts"
+    assert external_view["reason"] == "cognee_api"
+
+
+def test_memos_cloud_payload_advertises_readable_external_memories(hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "MEMOS_API_KEY=memos-secret\n"
+        "MEMOS_IS_GLOBAL=true\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "memos.json").write_text(
+        '{"MEMOS_NAMESPACE": "hermes-user"}\n',
+        encoding="utf-8",
+    )
+
+    status = get_memory_providers()
+    external_view = status["providers"]["memos"]["external_view"]
+
+    assert external_view["available"] is True
+    assert external_view["endpoint"] == "/api/memory/providers/memos/external"
+    assert external_view["view_type"] == "facts"
+    assert external_view["reason"] == "memos_cloud"
+
+
+def test_memos_self_hosted_payload_advertises_readable_external_memories(
+    hermes_home: Path,
+) -> None:
+    _env_file(hermes_home).write_text(
+        "MEMOS_BASE_URL=http://127.0.0.1:8001\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "memos.json").write_text(
+        '{"MEMOS_NAMESPACE": "hermes-cube"}\n',
+        encoding="utf-8",
+    )
+
+    status = get_memory_providers()
+    external_view = status["providers"]["memos"]["external_view"]
+
+    assert external_view["available"] is True
+    assert external_view["view_type"] == "facts"
+    assert external_view["reason"] == "memos_self_hosted"
 
 
 def test_holographic_external_view_reads_local_facts_without_mutation(hermes_home: Path) -> None:
@@ -1034,6 +1163,94 @@ def test_external_view_for_cognee_is_summary_only(hermes_home: Path) -> None:
     assert any(".env: missing" in item["content"] for item in result["items"])
 
 
+def test_external_view_for_cognee_api_reads_dataset_records(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "COGNEE_API_URL=http://127.0.0.1:8000\n"
+        "COGNEE_API_KEY=cognee-secret\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "cognee.json").write_text(
+        '{"COGNEE_DATASET": "hermes"}\n',
+        encoding="utf-8",
+    )
+
+    responses = iter(
+        [
+            b'[{"id":"dataset-1","name":"hermes","created_at":"2026-07-01T00:00:00Z"}]',
+            b'[{"id":"data-1","name":"note.txt","extension":".txt","mime_type":"text/plain","dataset_id":"dataset-1","created_at":"2026-07-02T00:00:00Z","updated_at":"2026-07-03T00:00:00Z"}]',
+        ]
+    )
+    seen_requests: list[tuple[str, str | None]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: bytes):
+            self.payload = payload
+
+        def read(self) -> bytes:
+            return self.payload
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_requests.append((request.full_url, request.get_header("X-api-key")))
+        return FakeResponse(next(responses))
+
+    monkeypatch.setattr("backend.services.memory_provider_external.urlopen", fake_urlopen)
+
+    result = get_memory_provider_external_view("cognee")
+
+    assert seen_requests == [
+        ("http://127.0.0.1:8000/api/v1/datasets", "cognee-secret"),
+        ("http://127.0.0.1:8000/api/v1/datasets/dataset-1/data", "cognee-secret"),
+    ]
+    assert result["provider"] == "cognee"
+    assert result["available"] is True
+    assert result["reason"] == "cognee_api"
+    assert result["summary"] == {"total": 1, "categories": {"hermes": 1}}
+    assert result["items"][0]["id"] == "data-1"
+    assert result["items"][0]["content"] == "note.txt"
+    assert result["items"][0]["category"] == "hermes"
+    assert result["items"][0]["tags"] == ["txt", "text/plain"]
+    assert result["items"][0]["created_at"] == "2026-07-02T00:00:00Z"
+    assert result["items"][0]["updated_at"] == "2026-07-03T00:00:00Z"
+
+
+def test_external_view_for_cognee_caps_unfiltered_dataset_requests(
+    monkeypatch,
+    hermes_home: Path,
+) -> None:
+    _env_file(hermes_home).write_text(
+        "COGNEE_API_URL=http://127.0.0.1:8000\n",
+        encoding="utf-8",
+    )
+    datasets = [{"id": f"dataset-{index}", "name": f"dataset-{index}"} for index in range(25)]
+    seen_urls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload: bytes):
+            self.payload = payload
+
+        def read(self) -> bytes:
+            return self.payload
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_urls.append(request.full_url)
+        payload = json.dumps(datasets).encode("utf-8") if len(seen_urls) == 1 else b"[]"
+        return FakeResponse(payload)
+
+    monkeypatch.setattr("backend.services.memory_provider_external.urlopen", fake_urlopen)
+
+    result = get_memory_provider_external_view("cognee")
+
+    assert result["available"] is True
+    assert result["items"] == []
+    assert len(seen_urls) == 21
+
+
 def test_external_view_for_community_provider_reports_safe_config_summary(hermes_home: Path) -> None:
     _env_file(hermes_home).write_text(
         "MEMOS_API_KEY=secret-memos-key\n",
@@ -1047,9 +1264,161 @@ def test_external_view_for_community_provider_reports_safe_config_summary(hermes
     assert result["available"] is True
     assert result["reason"] == "provider_summary"
     assert result["summary"]["categories"]["configured_fields"] == 1
-    assert result["summary"]["categories"]["missing_required"] == 0
+    assert result["summary"]["categories"]["missing_required"] == 1
     assert any("Cloud API" in item["content"] for item in result["items"])
     assert "secret-memos-key" not in str(result)
+
+
+def test_external_view_for_memos_cloud_reads_paginated_memories(monkeypatch, hermes_home: Path) -> None:
+    _env_file(hermes_home).write_text(
+        "MEMOS_API_KEY=memos-secret\n"
+        "MEMOS_IS_GLOBAL=true\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "memos.json").write_text(
+        '{"MEMOS_NAMESPACE": "hermes-user"}\n',
+        encoding="utf-8",
+    )
+
+    seen_requests: list[tuple[str, str | None, dict]] = []
+
+    responses = iter(
+        [
+            (
+                b'{"code":200,"message":"ok","data":{"total":2,"current":1,"pages":2,'
+                b'"memory_detail_list":[{"id":"mem-1","memory_key":"Topic","memory_value":"Cloud fact",'
+                b'"memory_type":"LongTermMemory","tags":["cloud"],"create_time":"2026-07-01T00:00:00Z",'
+                b'"update_time":"2026-07-01T01:00:00Z"}],"preference_detail_list":[]}}'
+            ),
+            (
+                b'{"code":200,"message":"ok","data":{"total":2,"current":2,"pages":2,'
+                b'"memory_detail_list":[],"preference_detail_list":[{"id":"pref-1",'
+                b'"preference":"Cloud preference","create_time":"2026-07-02T00:00:00Z",'
+                b'"update_time":"2026-07-02T01:00:00Z"}]}}'
+            ),
+        ]
+    )
+
+    class FakeResponse:
+        def read(self) -> bytes:
+            return next(responses)
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_requests.append(
+            (
+                request.full_url,
+                request.get_header("Authorization"),
+                json.loads(request.data.decode("utf-8")),
+            )
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_external.urlopen", fake_urlopen)
+
+    result = get_memory_provider_external_view("memos")
+
+    assert seen_requests == [
+        (
+            "https://api.memt.ai/platform/api/openmem/v1/get/memory",
+            "Token memos-secret",
+            {
+                "user_id": "hermes-user",
+                "include_preference": True,
+                "include_tool_memory": True,
+                "page": 1,
+                "size": 50,
+            },
+        ),
+        (
+            "https://api.memt.ai/platform/api/openmem/v1/get/memory",
+            "Token memos-secret",
+            {
+                "user_id": "hermes-user",
+                "include_preference": True,
+                "include_tool_memory": True,
+                "page": 2,
+                "size": 50,
+            },
+        ),
+    ]
+    assert result["provider"] == "memos"
+    assert result["available"] is True
+    assert result["reason"] == "memos_cloud"
+    assert result["summary"] == {
+        "total": 2,
+        "categories": {"LongTermMemory": 1, "preference": 1},
+    }
+    assert [item["content"] for item in result["items"]] == [
+        "Topic: Cloud fact",
+        "Cloud preference",
+    ]
+    assert result["items"][0]["tags"] == ["cloud"]
+    assert result["items"][0]["created_at"] == "2026-07-01T00:00:00Z"
+    assert result["items"][0]["updated_at"] == "2026-07-01T01:00:00Z"
+    assert result["items"][1]["created_at"] == "2026-07-02T00:00:00Z"
+    assert result["items"][1]["updated_at"] == "2026-07-02T01:00:00Z"
+
+
+def test_external_view_for_memos_self_hosted_reads_cube_memories(
+    monkeypatch,
+    hermes_home: Path,
+) -> None:
+    _env_file(hermes_home).write_text(
+        "MEMOS_BASE_URL=http://127.0.0.1:8001\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "memos.json").write_text(
+        '{"MEMOS_NAMESPACE": "hermes-cube"}\n',
+        encoding="utf-8",
+    )
+
+    seen_requests: list[tuple[str, dict]] = []
+
+    class FakeResponse:
+        def read(self) -> bytes:
+            return (
+                b'{"code":200,"message":"ok","data":{'
+                b'"text_mem":[{"cube_id":"hermes-cube","total_nodes":1,"memories":['
+                b'{"id":"local-1","memory":"Self-hosted fact","metadata":{"memory_type":"UserMemory","tags":["local"]},"created_at":"2026-07-03T00:00:00Z"}]}],'
+                b'"pref_mem":[],"tool_mem":[],"skill_mem":[]}}'
+            )
+
+        def close(self) -> None:
+            pass
+
+    def fake_urlopen(request, timeout):
+        seen_requests.append(
+            (request.full_url, json.loads(request.data.decode("utf-8")))
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr("backend.services.memory_provider_external.urlopen", fake_urlopen)
+
+    result = get_memory_provider_external_view("memos")
+
+    assert seen_requests == [
+        (
+            "http://127.0.0.1:8001/product/get_memory",
+            {
+                "mem_cube_id": "hermes-cube",
+                "include_preference": True,
+                "include_tool_memory": True,
+                "include_skill_memory": True,
+                "page": 1,
+                "page_size": 100,
+            },
+        )
+    ]
+    assert result["provider"] == "memos"
+    assert result["available"] is True
+    assert result["reason"] == "memos_self_hosted"
+    assert result["summary"] == {"total": 1, "categories": {"UserMemory": 1}}
+    assert result["items"][0]["id"] == "local-1"
+    assert result["items"][0]["content"] == "Self-hosted fact"
+    assert result["items"][0]["tags"] == ["local"]
 
 
 def test_external_view_for_agentmemory_rest_reads_memories(monkeypatch, hermes_home: Path) -> None:

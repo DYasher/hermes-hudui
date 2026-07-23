@@ -8,6 +8,8 @@
 
 **技术栈：** FastAPI、Pydantic、pytest、React、TypeScript、Vite、Tailwind、Hermes config.yaml / .env / provider JSON 文件。
 
+**状态：** 已完成；2026-07-23 补齐 Cognee 与 MemOS 的真实只读视图并完成最终回归。
+
 ---
 
 ## 上游依据
@@ -30,7 +32,7 @@
 - 创建：`backend/services/memory_provider_health.py`
   - 负责只读依赖检查、端口/HTTP 探测、CLI 探测。
 - 创建：`backend/services/memory_provider_external.py`
-  - 负责 provider-specific 外部视图；第一版只返回安全的摘要、原因、只读项目，不写入外部系统。
+  - 负责 provider-specific 外部视图；按稳定公开 API 返回真实只读条目，不满足读取条件时返回脱敏摘要，不写入外部系统。
 - 修改：`frontend/src/components/MemoryPanel.tsx`
   - 使用后端返回的 `group` / `group_label` 替代前端硬编码 `communityProviderIds`。
   - 在安装指南页签中按 provider mode 展示命令和风险提示。
@@ -54,7 +56,7 @@
 - 添加：当前构建产物 `backend/static/assets/index-2_PhGD-n.js`
 - 添加：当前构建产物 `backend/static/assets/index-BTkRz3Wr.css`
 
-- [ ] **步骤 0.1：确认当前工作区只包含本轮 UI 重构和已知未跟踪目录**
+- [x] **步骤 0.1：确认当前工作区只包含本轮 UI 重构和已知未跟踪目录**
 
 运行：
 
@@ -75,7 +77,7 @@ git status --short
 
 `.claude/` 是既有未跟踪目录，不纳入提交。`docs/superpowers/` 是本计划文档。
 
-- [ ] **步骤 0.2：重新运行验证**
+- [x] **步骤 0.2：重新运行验证**
 
 运行：
 
@@ -93,7 +95,7 @@ vite build exits 0
 git diff --check has no output
 ```
 
-- [ ] **步骤 0.3：同步静态资源**
+- [x] **步骤 0.3：同步静态资源**
 
 运行：
 
@@ -103,7 +105,7 @@ cp -r frontend/dist/* backend/static/
 
 预期：`backend/static/index.html` 指向最新 JS/CSS hash。
 
-- [ ] **步骤 0.4：提交当前 UI 重构**
+- [x] **步骤 0.4：提交当前 UI 重构**
 
 运行：
 
@@ -123,7 +125,7 @@ git commit -m "refactor: simplify external memory console"
 - 修改：`backend/api/memory.py`
 - 测试：`tests/test_memory_api.py`
 
-- [ ] **步骤 1.1：编写失败测试，要求后端返回 provider 分组**
+- [x] **步骤 1.1：编写失败测试，要求后端返回 provider 分组**
 
 在 `tests/test_memory_api.py` 增加：
 
@@ -146,7 +148,7 @@ def test_memory_provider_payload_includes_provider_groups(hermes_home: Path) -> 
 
 预期：FAIL，原因是 `cognee` / `agentmemory` / `memos` 不存在或没有 `group`。
 
-- [ ] **步骤 1.2：创建 catalog 模块**
+- [x] **步骤 1.2：创建 catalog 模块**
 
 创建 `backend/services/memory_provider_catalog.py`，至少包含：
 
@@ -200,7 +202,7 @@ from backend.services.memory_provider_catalog import (
 "group": provider_group(key),
 ```
 
-- [ ] **步骤 1.3：运行阶段 1 测试**
+- [x] **步骤 1.3：运行阶段 1 测试**
 
 运行：
 
@@ -211,7 +213,7 @@ from backend.services.memory_provider_catalog import (
 
 预期：新增测试 PASS，现有 memory API 测试 PASS。
 
-- [ ] **步骤 1.4：提交 provider catalog 拆分**
+- [x] **步骤 1.4：提交 provider catalog 拆分**
 
 运行：
 
@@ -231,7 +233,7 @@ git commit -m "refactor: extract memory provider catalog"
 - 修改：`frontend/src/components/MemoryPanel.tsx`
 - 修改：`frontend/src/i18n/translations.ts`
 
-- [ ] **步骤 2.1：编写 Cognee provider payload 测试**
+- [x] **步骤 2.1：编写 Cognee provider payload 测试**
 
 在 `tests/test_memory_api.py` 增加：
 
@@ -262,7 +264,7 @@ def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home:
 
 预期：FAIL，`cognee` 未定义。
 
-- [ ] **步骤 2.2：实现 Cognee catalog**
+- [x] **步骤 2.2：实现 Cognee catalog**
 
 在 `MEMORY_PROVIDER_OPTIONS` 加入：
 
@@ -365,7 +367,7 @@ def test_cognee_provider_payload_describes_modes_and_minimum_config(hermes_home:
 },
 ```
 
-- [ ] **步骤 2.3：只读健康检查不假设 Cognee 私有 API**
+- [x] **步骤 2.3：只读健康检查不假设 Cognee 私有 API**
 
 在 `backend/services/memory_provider_health.py` 添加：
 
@@ -388,7 +390,7 @@ def check_http_endpoint(url: str) -> dict:
 
 Cognee health 使用 `COGNEE_API_URL` 或 `COGNEE_MCP_URL` 做只读 GET 探测；Python/CLI 模式继续使用 dependency checks。
 
-- [ ] **步骤 2.4：运行 Cognee 测试并提交**
+- [x] **步骤 2.4：运行 Cognee 测试并提交**
 
 运行：
 
@@ -414,7 +416,7 @@ git commit -m "feat: add cognee memory provider metadata"
 - 修改：`backend/services/memory_provider_external.py`
 - 修改：`tests/test_memory_api.py`
 
-- [ ] **步骤 3.1：编写 agentmemory payload 测试**
+- [x] **步骤 3.1：编写 agentmemory payload 测试**
 
 在 `tests/test_memory_api.py` 增加：
 
@@ -441,7 +443,7 @@ def test_agentmemory_provider_payload_describes_rest_and_mcp_modes(hermes_home: 
 
 预期：FAIL，`agentmemory` 未定义。
 
-- [ ] **步骤 3.2：实现 agentmemory catalog**
+- [x] **步骤 3.2：实现 agentmemory catalog**
 
 加入 provider：
 
@@ -527,7 +529,7 @@ Capability：
 },
 ```
 
-- [ ] **步骤 3.3：实现 agentmemory 只读健康和摘要外部视图**
+- [x] **步骤 3.3：实现 agentmemory 只读健康和摘要外部视图**
 
 健康检查：
 
@@ -558,7 +560,7 @@ def agentmemory_health(values: dict[str, dict]) -> list[dict]:
 
 第一版不直接读取 agentmemory 数据库，避免绑定其内部 schema。
 
-- [ ] **步骤 3.4：运行 agentmemory 测试并提交**
+- [x] **步骤 3.4：运行 agentmemory 测试并提交**
 
 运行：
 
@@ -582,7 +584,7 @@ git commit -m "feat: add agentmemory provider metadata"
 - 修改：`tests/test_memory_api.py`
 - 修改：`frontend/src/i18n/translations.ts`
 
-- [ ] **步骤 4.1：编写 MemOS provider 测试**
+- [x] **步骤 4.1：编写 MemOS provider 测试**
 
 在 `tests/test_memory_api.py` 增加：
 
@@ -609,7 +611,7 @@ def test_memos_provider_payload_describes_cloud_and_self_hosted_modes(hermes_hom
 
 预期：FAIL，`memos` 未定义。
 
-- [ ] **步骤 4.2：实现 MemOS catalog**
+- [x] **步骤 4.2：实现 MemOS catalog**
 
 加入 provider：
 
@@ -699,7 +701,7 @@ Capability：
 },
 ```
 
-- [ ] **步骤 4.3：实现 MemOS 只读探测**
+- [x] **步骤 4.3：实现 MemOS 只读探测**
 
 Self-hosted 模式：
 
@@ -717,7 +719,7 @@ def memos_health(values: dict[str, dict]) -> list[dict]:
 
 Cloud 模式第一版只检查 key 是否配置，不发起外部网络请求。
 
-- [ ] **步骤 4.4：运行 MemOS 测试并提交**
+- [x] **步骤 4.4：运行 MemOS 测试并提交**
 
 运行：
 
@@ -742,7 +744,7 @@ git commit -m "feat: add memos provider metadata"
 - 修改：`backend/static/index.html`
 - 添加：新构建产物 `backend/static/assets/*.js` 和 `backend/static/assets/*.css`
 
-- [ ] **步骤 5.1：编写失败测试，禁止前端硬编码社区 provider**
+- [x] **步骤 5.1：编写失败测试，禁止前端硬编码社区 provider**
 
 在 `tests/test_memory_frontend.py` 增加或调整：
 
@@ -763,7 +765,7 @@ def test_memory_panel_uses_backend_provider_group_metadata() -> None:
 
 预期：FAIL，当前前端还有 `communityProviderIds`。
 
-- [ ] **步骤 5.2：调整前端类型和分组函数**
+- [x] **步骤 5.2：调整前端类型和分组函数**
 
 在 `MemoryProviderInfo` 中增加：
 
@@ -791,7 +793,7 @@ function providerGroups(providers: MemoryProviderInfo[]): Array<{ id: string; la
 }
 ```
 
-- [ ] **步骤 5.3：增强安装指南页签为 mode-aware**
+- [x] **步骤 5.3：增强安装指南页签为 mode-aware**
 
 将 `ProviderInstallGuideTab` 的命令构造改为按 mode 展示：
 
@@ -817,7 +819,7 @@ UI 显示：
 
 保留“仅供核对，HUD 不自动执行安装/卸载”的风险提示。
 
-- [ ] **步骤 5.4：增强外部视图支持 summary-only provider**
+- [x] **步骤 5.4：增强外部视图支持 summary-only provider**
 
 当前 `ExternalMemoryViewPanel` 已有 `summary` 和 `items`。加入显示规则：
 
@@ -827,7 +829,7 @@ const summaryOnly = externalView?.reason === 'summary_only' && !externalView.ite
 
 当 summary-only 时显示 provider、available、readonly、reason、categories，不显示空白条目列表。
 
-- [ ] **步骤 5.5：运行前端测试和构建**
+- [x] **步骤 5.5：运行前端测试和构建**
 
 运行：
 
@@ -839,7 +841,7 @@ cp -r frontend/dist/* backend/static/
 
 预期：frontend 测试 PASS，Vite build exit 0，静态入口 hash 更新。
 
-- [ ] **步骤 5.6：提交前端控制台增强**
+- [x] **步骤 5.6：提交前端控制台增强**
 
 运行：
 
@@ -855,7 +857,7 @@ git commit -m "feat: support community memory providers in console"
 - 不新增业务文件。
 - 可生成临时 Playwright 截图，但不要提交 `.playwright-cli/`。
 
-- [ ] **步骤 6.1：全量测试**
+- [x] **步骤 6.1：全量测试**
 
 运行：
 
@@ -873,7 +875,7 @@ vite build exits 0
 git diff --check has no output
 ```
 
-- [ ] **步骤 6.2：浏览器验证**
+- [x] **步骤 6.2：浏览器验证**
 
 在已有 `http://127.0.0.1:3002` 上验证：
 
@@ -887,7 +889,7 @@ git diff --check has no output
    - 诊断页不自动启动外部服务，只显示只读状态。
    - 安装指南只展示命令，不执行命令。
 
-- [ ] **步骤 6.3：清理临时文件**
+- [x] **步骤 6.3：清理临时文件**
 
 运行：
 
@@ -898,7 +900,7 @@ git status --short
 
 预期：没有 `.playwright-cli/`，只剩预期源码/静态资产变更。
 
-- [ ] **步骤 6.4：最终提交**
+- [x] **步骤 6.4：最终提交**
 
 如果阶段 5 后还有修正：
 
@@ -907,12 +909,24 @@ git add <changed-files>
 git commit -m "test: verify community memory providers"
 ```
 
+## 2026-07-23 收尾增强
+
+- 前端同时识别 `summary_only` 和后端规范值 `provider_summary`，摘要提示与安全摘要条目可以同时显示。
+- Cognee `docker_api` 模式在配置 `COGNEE_API_URL` 后读取 `GET /api/v1/datasets` 和 `GET /api/v1/datasets/{dataset_id}/data`；`COGNEE_API_KEY` 作为可选 `X-Api-Key`，不下载原始文件。
+- agentmemory `rest_server` 模式继续使用 `GET /agentmemory/memories`，并把能力矩阵修正为 `provider_specific`。
+- MemOS Cloud 在配置 `MEMOS_API_KEY` 和 `MEMOS_NAMESPACE` 后，以 `Token` 鉴权读取 `POST /get/memory`；默认使用中国区地址，`MEMOS_IS_GLOBAL=true` 时使用 Global 地址。
+- MemOS Self-hosted 在配置 `MEMOS_BASE_URL` 和 `MEMOS_NAMESPACE` 后，读取 `POST /product/get_memory`。
+- Cognee、agentmemory、MemOS 未满足 provider-specific 读取条件时继续返回 `provider_summary`，不发起猜测性请求。
+- Cognee、agentmemory、MemOS 将所选配置模式写入各自 JSON，避免多种模式字段同时存在时错误推断当前模式。
+- MemOS Cloud 按官方 `current` / `pages` 契约分页，兼容 `memory_key`、`preference`、`create_time` 和 `update_time` 字段；`MEMOS_IS_GLOBAL` 使用布尔复选框。
+- Cognee 未指定 dataset 时最多探测 20 个数据集；需要读取列表后部的数据集时应显式填写 `COGNEE_DATASET`。
+
 ## 安全边界
 
 - HUD 不自动执行 `pip install`、`npm install`、`docker compose up`、`agentmemory connect`、`hermes config set` 之外的外部安装动作。
 - HUD 不自动写第三方 agent 配置文件，只写 Hermes 自己的 `config.yaml`、`.env` 和 provider JSON。
 - 所有 secret 字段返回前必须脱敏，测试必须断言 secret 不出现在 API payload。
-- 外部视图第一版只读；如果 provider 没有稳定公开 API，只显示 summary 和 reason。
+- 外部视图始终只读；如果 provider 没有稳定公开 API 或缺少读取范围，只显示 summary 和 reason。
 - 内置 `MEMORY.md` 和 `USER.md` 始终保留，外部 provider 只影响 `memory.provider`。
 - 同一时间仍只启用一个外部 provider。
 

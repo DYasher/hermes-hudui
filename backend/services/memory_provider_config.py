@@ -233,6 +233,7 @@ def field_specs(info: dict[str, Any]) -> list[dict[str, Any]]:
                 "storage": field.get("storage", ""),
                 "path": field.get("path", field.get("storage", "")),
                 "secret": bool(field.get("secret", False)),
+                "control": field.get("control", "text"),
                 "help": field.get("help", ""),
                 "requirement": requirement,
                 "required_group": required_group,
@@ -415,10 +416,16 @@ def save_provider_fields(provider: str, fields: dict[str, str], mode: str = "") 
     info = MEMORY_PROVIDER_OPTIONS[provider]
     mode = validate_config_mode(info, mode)
     fields = {name: value for name, value in fields.items()}
-    if mode and "mode" in {field["name"] for field in info.get("fields", [])}:
-        fields.setdefault("mode", mode)
-
     specs = {field["name"]: field for field in info.get("fields", [])}
+    field_mode = ""
+    if "mode" in specs and "mode" in fields:
+        field_mode = validate_config_mode(info, str(fields["mode"]))
+    if mode and field_mode and mode != field_mode:
+        raise HTTPException(400, "conflicting provider config modes")
+    mode = mode or field_mode
+    if mode and "mode" in specs:
+        fields["mode"] = mode
+
     unknown = [name for name in fields if name not in specs]
     if unknown:
         raise HTTPException(400, f"unknown config field: {unknown[0]}")

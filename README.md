@@ -65,7 +65,14 @@ Profiles 页面已扩展为完整的 Hermes 配置档案管理界面：
 
 ### 外挂记忆
 
-Memory 页面支持查看和切换官方 `memory.provider` 外部记忆配置。内置 `MEMORY.md` / `USER.md` 始终启用，外部 provider 同一时间只能启用一个。当前支持的 provider 包括 Honcho、OpenViking、Mem0、Hindsight、Holographic、RetainDB、ByteRover、Supermemory 和 Memori。
+Memory 页面将内置记忆、外挂记忆和用户画像集中在同一工作区。内置 `MEMORY.md` / `USER.md` 始终保留，外部 provider 同一时间只能启用一个。
+
+- 支持 Honcho、OpenViking、Mem0、Hindsight、Holographic、RetainDB、ByteRover、Supermemory、Memori、Cognee、agentmemory 和 MemOS。
+- 外挂记忆控制台提供概览、provider-specific 配置、诊断、只读外部视图和 mode-aware 安装指南。
+- 必填字段显示红色星号，缺少当前模式的必填配置时不能保存；API key 等 secret 字段不会通过状态或导出接口返回明文。
+- Holographic 可只读显示本地 facts；agentmemory REST 可读取 `/agentmemory/memories`；Cognee Docker API 可读取 `/api/v1/datasets` 及数据记录。
+- MemOS Cloud 使用 `POST /get/memory` 并按页读取，Self-hosted 使用 `POST /product/get_memory`；两种模式都需要填写 `MEMOS_NAMESPACE` 作为用户或 MemCube 读取范围，Cloud 可通过 `MEMOS_IS_GLOBAL` 复选框切换至 Global 地址。
+- 没有配置稳定读取接口的模式继续显示脱敏配置摘要。HUD 不直接修改第三方数据库，也不会自动执行安装、卸载或容器启动命令。
 
 ### 技能库管理与双语阅读
 

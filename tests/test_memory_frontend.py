@@ -158,6 +158,8 @@ def test_memory_panel_renders_summary_only_external_memory_view() -> None:
 
     assert "summaryOnly" in panel
     assert "externalView?.reason === 'summary_only'" in panel
+    assert "externalView?.reason === 'provider_summary'" in panel
+    assert "!busy && summaryOnly" in panel
     assert "memory.externalSummaryOnly" in panel
     assert "'memory.externalSummaryOnly'" in translations
 
@@ -222,6 +224,16 @@ def test_memory_panel_shows_provider_config_requirements_and_next_step() -> None
     assert "memory.configNextStep" in config_block
     assert "statusCommand" in config_block
     assert "'memory.configNextStep'" in translations
+
+
+def test_memory_panel_renders_boolean_provider_fields_as_checkboxes() -> None:
+    panel = (ROOT / "frontend/src/components/MemoryPanel.tsx").read_text()
+    config_block = panel.split("function ProviderConfigTab", 1)[1].split("function ProviderDiagnosticsTab", 1)[0]
+
+    assert "control?: 'text' | 'boolean'" in panel
+    assert "field.control === 'boolean'" in config_block
+    assert 'type="checkbox"' in config_block
+    assert "configDraft[field.name] === 'true'" in config_block
 
 
 def test_memory_panel_uses_grouped_provider_select_instead_of_provider_button_strip() -> None:
